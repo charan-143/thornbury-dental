@@ -1,0 +1,20 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "newsreader",
+        "createdAt": "2026-09-06T13:23:43.856Z",
+        "reason": "DESIGN.md names Copernicus and Tiempos Headline, both commercially licensed and unavailable here. Newsreader is the closest free Google Fonts equivalent and is loaded as the --font-display stack head with the DESIGN.md names retained as fallbacks."
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-06T19:29:31.271Z",
+        "reason": "DESIGN.md (the getdesign claude system) specifies the sans stack as StyreneB, Inter, sans-serif. StyreneB is a commercial Anthropic face and is not available, so Inter is the documented fallback rather than a default reached for. Pairs with the existing Newsreader ignore for Copernicus/Tiempos Headline."
+      }
+    ]
+  }
+}

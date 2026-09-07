@@ -1,0 +1,19 @@
+node_modules/
+.next/
+.env*.local
+.env
+*.log
+.vercel
+
+# Installed skill content, reinstallable from skills-lock.json via:
+#   npx skills install
+.agents/
+.claude/skills/
+
+# Generated caches. Regenerated on every build, and the impeccable cache
+# embeds absolute local paths, so neither belongs in the repository.
+# .impeccable/config.json stays tracked: it holds the documented rule exemptions.
+tsconfig.tsbuildinfo
+.impeccable/hook.cache.json
+.data/
+
