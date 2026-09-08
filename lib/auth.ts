@@ -233,19 +233,26 @@ export async function currentUser(): Promise<SessionUser | null> {
 }
 
 export async function signOut(): Promise<void> {
-  const user = await currentUser();
-  if (user) {
-    await db()`UPDATE sessions SET revoked_at = now() WHERE id = ${user.sessionId}`;
-    await record({
-      actorId: user.clinicianId,
-      actorRole: user.role,
-      action: "signed out",
-      entity: "session",
-      entityId: user.sessionId,
-    });
+  try {
+    const user = await currentUser();
+    if (user) {
+      await db()`UPDATE sessions SET revoked_at = now() WHERE id = ${user.sessionId}`;
+      await record({
+        actorId: user.clinicianId,
+        actorRole: user.role,
+        action: "signed out",
+        entity: "session",
+        entityId: user.sessionId,
+      });
+    }
+  } catch (err) {
+    console.warn("signOut database notice:", err instanceof Error ? err.message : String(err));
+  } finally {
+    try {
+      const jar = await cookies();
+      jar.delete(SESSION_COOKIE);
+    } catch (e) {}
   }
-  const jar = await cookies();
-  jar.delete(SESSION_COOKIE);
 }
 
 /** Ends every session for an account, used after a password change or reset. */
