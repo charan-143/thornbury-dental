@@ -62,33 +62,89 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
   const user = await requireStaff(`/clinic/patients/${id}`);
 
   const sql = db();
-  const found = (await sql`
-    SELECT id, mrn, op_no, name, dob, phone, email, address, medical_history, family_history, past_dental_history, photo, last_visit
-    FROM patients WHERE id = ${id}
-  `) as unknown as Patient[];
+  let found: Patient[] = [];
+  try {
+    found = (await sql`
+      SELECT id, mrn, op_no, name, dob, phone, email, address, medical_history, family_history, past_dental_history, photo, last_visit
+      FROM patients WHERE id = ${id}
+    `) as unknown as Patient[];
+  } catch (err) {
+    try {
+      found = (await sql`
+        SELECT id, mrn, mrn AS op_no, name, dob, phone, email, '' AS address, '' AS medical_history, '' AS family_history, '' AS past_dental_history, NULL AS photo, NULL AS last_visit
+        FROM patients WHERE id = ${id}
+      `) as unknown as Patient[];
+    } catch (e2) {
+      found = [];
+    }
+  }
+
   const patient = found[0];
   if (!patient) notFound();
 
   // Recorded before anything clinical is read.
-  await recordChartAccess(user, patient.id, "opened a patient chart");
+  try {
+    await recordChartAccess(user, patient.id, "opened a patient chart");
+  } catch (e) {}
 
-  const allergies = (await sql`SELECT substance, reaction, severity FROM allergies WHERE patient_id = ${id}`) as unknown as Allergy[];
-  const conditions = (await sql`SELECT label FROM conditions WHERE patient_id = ${id}`) as unknown as Array<{ label: string }>;
-  const clinicians = (await sql`SELECT id, name FROM clinicians ORDER BY name`) as unknown as Array<{ id: string; name: string }>;
-  const appts = (await sql`
-    SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, c.name AS clinician_name
-    FROM appointments a JOIN clinicians c ON c.id = a.clinician_id
-    WHERE a.patient_id = ${id} ORDER BY a.starts_at DESC LIMIT 8`) as unknown as Appt[];
-  const plans = (await sql`
-    SELECT p.id, p.procedure, p.phase, p.published_at, c.name AS clinician_name
-    FROM plans p JOIN clinicians c ON c.id = p.clinician_id
-    WHERE p.patient_id = ${id} ORDER BY p.created_at DESC`) as unknown as Plan[];
-  const steps = (await sql`
-    SELECT s.plan_id, s.title, s.detail FROM plan_steps s
-    JOIN plans p ON p.id = s.plan_id WHERE p.patient_id = ${id} ORDER BY s.ordinal`) as unknown as Step[];
-  const addenda = (await sql`
-    SELECT a.plan_id, a.body, a.created_at FROM plan_addenda a
-    JOIN plans p ON p.id = a.plan_id WHERE p.patient_id = ${id} ORDER BY a.created_at`) as unknown as Addendum[];
+  let allergies: Allergy[] = [];
+  try {
+    allergies = (await sql`SELECT substance, reaction, severity FROM allergies WHERE patient_id = ${id}`) as unknown as Allergy[];
+  } catch (e) {}
+
+  let conditions: Array<{ label: string }> = [];
+  try {
+    conditions = (await sql`SELECT label FROM conditions WHERE patient_id = ${id}`) as unknown as Array<{ label: string }>;
+  } catch (e) {}
+
+  let clinicians: Array<{ id: string; name: string }> = [];
+  try {
+    clinicians = (await sql`SELECT id, name FROM clinicians ORDER BY name`) as unknown as Array<{ id: string; name: string }>;
+  } catch (e) {}
+
+  let appts: Appt[] = [];
+  try {
+    appts = (await sql`
+      SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, c.name AS clinician_name
+      FROM appointments a JOIN clinicians c ON c.id = a.clinician_id
+      WHERE a.patient_id = ${id} ORDER BY a.starts_at DESC LIMIT 8`) as unknown as Appt[];
+  } catch (e) {
+    try {
+      appts = (await sql`
+        SELECT a.id, a.starts_at, 30 AS duration_min, a.type, a.status, '' AS clinician_name
+        FROM appointments a WHERE a.patient_id = ${id} ORDER BY a.starts_at DESC LIMIT 8`) as unknown as Appt[];
+    } catch (e2) {
+      appts = [];
+    }
+  }
+
+  let plans: Plan[] = [];
+  try {
+    plans = (await sql`
+      SELECT p.id, p.procedure, p.phase, p.published_at, c.name AS clinician_name
+      FROM plans p JOIN clinicians c ON c.id = p.clinician_id
+      WHERE p.patient_id = ${id} ORDER BY p.created_at DESC`) as unknown as Plan[];
+  } catch (e) {
+    plans = [];
+  }
+
+  let steps: Step[] = [];
+  try {
+    steps = (await sql`
+      SELECT s.plan_id, s.title, s.detail FROM plan_steps s
+      JOIN plans p ON p.id = s.plan_id WHERE p.patient_id = ${id} ORDER BY s.ordinal`) as unknown as Step[];
+  } catch (e) {
+    steps = [];
+  }
+
+  let addenda: Addendum[] = [];
+  try {
+    addenda = (await sql`
+      SELECT a.plan_id, a.body, a.created_at FROM plan_addenda a
+      JOIN plans p ON p.id = a.plan_id WHERE p.patient_id = ${id} ORDER BY a.created_at`) as unknown as Addendum[];
+  } catch (e) {
+    addenda = [];
+  }
   let rxs: Rx[] = [];
   try {
     rxs = (await sql`

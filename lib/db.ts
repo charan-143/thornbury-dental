@@ -30,231 +30,247 @@ import path from "node:path";
 let neonInitPromise: Promise<void> | null = null;
 
 async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
-  let fileMigrationSucceeded = false;
   try {
     const migrationPath = path.join(process.cwd(), "migrations", "0001_init.sql");
     if (fs.existsSync(migrationPath)) {
       const migrationSql = fs.readFileSync(migrationPath, "utf8");
       await client.query(migrationSql);
-      fileMigrationSucceeded = true;
     }
   } catch (e) {
     console.warn("Neon migration init check:", e instanceof Error ? e.message : String(e));
   }
 
-  if (!fileMigrationSucceeded) {
-    const ddlStatements = [
-      `CREATE TABLE IF NOT EXISTS schema_migrations (
-        version    TEXT PRIMARY KEY,
-        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`,
-      `CREATE TABLE IF NOT EXISTS clinicians (
-        id          TEXT PRIMARY KEY,
-        name        TEXT NOT NULL,
-        credentials TEXT NOT NULL DEFAULT '',
-        specialty   TEXT NOT NULL DEFAULT '',
-        room        TEXT NOT NULL DEFAULT '',
-        photo       TEXT,
-        bio         TEXT,
-        active      BOOLEAN NOT NULL DEFAULT true,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`,
-      `CREATE TABLE IF NOT EXISTS accounts (
-        id                  TEXT PRIMARY KEY,
-        email               TEXT NOT NULL UNIQUE,
-        role                TEXT NOT NULL CHECK (role IN ('clinician', 'admin')),
-        clinician_id        TEXT NOT NULL REFERENCES clinicians(id) ON DELETE RESTRICT,
-        password_hash       TEXT NOT NULL,
-        password_salt       TEXT NOT NULL,
-        kdf                 TEXT NOT NULL,
-        created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-        password_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        failed_attempts     INTEGER NOT NULL DEFAULT 0,
-        locked_until        TIMESTAMPTZ,
-        last_sign_in_at     TIMESTAMPTZ,
-        disabled_at         TIMESTAMPTZ
-      );`,
-      `CREATE INDEX IF NOT EXISTS idx_accounts_clinician ON accounts(clinician_id);`,
-      `CREATE TABLE IF NOT EXISTS sessions (
-        id           TEXT PRIMARY KEY,
-        account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-        token_hash   TEXT NOT NULL UNIQUE,
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-        expires_at   TIMESTAMPTZ NOT NULL,
-        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        revoked_at   TIMESTAMPTZ,
-        user_agent   TEXT
-      );`,
-      `CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);`,
-      `CREATE TABLE IF NOT EXISTS invites (
-        id           TEXT PRIMARY KEY,
-        email        TEXT NOT NULL,
-        role         TEXT NOT NULL CHECK (role IN ('clinician', 'admin')),
-        clinician_id TEXT NOT NULL REFERENCES clinicians(id) ON DELETE CASCADE,
-        token_hash   TEXT NOT NULL UNIQUE,
-        invited_by  TEXT REFERENCES accounts(id) ON DELETE SET NULL,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-        expires_at  TIMESTAMPTZ NOT NULL,
-        accepted_at TIMESTAMPTZ,
-        revoked_at  TIMESTAMPTZ
-      );`,
-      `CREATE TABLE IF NOT EXISTS password_resets (
-        code_hash  TEXT PRIMARY KEY,
-        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-        expires_at TIMESTAMPTZ NOT NULL,
-        used_at    TIMESTAMPTZ
-      );`,
-      `CREATE TABLE IF NOT EXISTS auth_throttle (
-        key       TEXT PRIMARY KEY,
-        hits      INTEGER NOT NULL DEFAULT 0,
-        window_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`,
-      `CREATE TABLE IF NOT EXISTS patients (
-        id                  TEXT PRIMARY KEY,
-        mrn                 TEXT NOT NULL UNIQUE,
-        op_no               TEXT,
-        name                TEXT NOT NULL,
-        dob                 DATE NOT NULL,
-        phone               TEXT,
-        email               TEXT,
-        address             TEXT,
-        medical_history     TEXT,
-        family_history      TEXT,
-        past_dental_history TEXT,
-        photo               TEXT,
-        last_visit          DATE,
-        created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`,
-      `CREATE TABLE IF NOT EXISTS allergies (
-        id         TEXT PRIMARY KEY,
-        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        substance  TEXT NOT NULL,
-        reaction   TEXT NOT NULL,
-        severity   TEXT NOT NULL CHECK (severity IN ('mild', 'moderate', 'severe'))
-      );`,
-      `CREATE TABLE IF NOT EXISTS conditions (
-        id         TEXT PRIMARY KEY,
-        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        label      TEXT NOT NULL
-      );`,
-      `CREATE TABLE IF NOT EXISTS dental_chart (
-        id         TEXT PRIMARY KEY,
-        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        tooth_num  INTEGER NOT NULL CHECK (tooth_num >= 1 AND tooth_num <= 32),
-        condition  TEXT NOT NULL DEFAULT 'sound',
-        notes      TEXT,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE(patient_id, tooth_num)
-      );`,
-      `CREATE TABLE IF NOT EXISTS appointments (
-        id           TEXT PRIMARY KEY,
-        patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        clinician_id TEXT NOT NULL REFERENCES clinicians(id),
-        starts_at    TIMESTAMPTZ NOT NULL,
-        duration_min INTEGER NOT NULL CHECK (duration_min > 0 AND duration_min <= 480),
-        type         TEXT NOT NULL,
-        status       TEXT NOT NULL CHECK (status IN ('confirmed', 'completed', 'cancelled')),
-        room         TEXT NOT NULL DEFAULT '',
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`,
-      `CREATE TABLE IF NOT EXISTS plans (
-        id           TEXT PRIMARY KEY,
-        patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        clinician_id TEXT NOT NULL REFERENCES clinicians(id),
-        procedure    TEXT NOT NULL,
-        phase        TEXT NOT NULL CHECK (phase IN ('pre', 'post')),
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-        published_at TIMESTAMPTZ,
-        locked_at    TIMESTAMPTZ
-      );`,
-      `CREATE TABLE IF NOT EXISTS plan_steps (
-        id      TEXT PRIMARY KEY,
-        plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-        ordinal INTEGER NOT NULL,
-        title   TEXT NOT NULL,
-        detail  TEXT NOT NULL DEFAULT '',
-        UNIQUE (plan_id, ordinal)
-      );`,
-      `CREATE TABLE IF NOT EXISTS plan_addenda (
-        id         TEXT PRIMARY KEY,
-        plan_id    TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-        author_id  TEXT NOT NULL REFERENCES clinicians(id),
-        body       TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`,
-      `CREATE TABLE IF NOT EXISTS prescriptions (
-        id              TEXT PRIMARY KEY,
-        patient_id      TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        clinician_id    TEXT NOT NULL REFERENCES clinicians(id),
-        drug            TEXT NOT NULL,
-        form            TEXT NOT NULL,
-        dose            TEXT NOT NULL,
-        route           TEXT NOT NULL,
-        frequency       TEXT NOT NULL,
-        duration_days   INTEGER NOT NULL CHECK (duration_days > 0 AND duration_days <= 365),
-        refills         INTEGER NOT NULL DEFAULT 0 CHECK (refills >= 0),
-        indication      TEXT NOT NULL,
-        issued_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-        override_reason TEXT
-      );`,
-      `CREATE TABLE IF NOT EXISTS reminders (
-        id              TEXT PRIMARY KEY,
-        prescription_id TEXT NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
-        patient_id      TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        times           JSONB NOT NULL,
-        starts_on       DATE NOT NULL,
-        ends_on         DATE NOT NULL
-      );`,
-      `CREATE TABLE IF NOT EXISTS dose_log (
-        id          TEXT PRIMARY KEY,
-        reminder_id TEXT NOT NULL REFERENCES reminders(id) ON DELETE CASCADE,
-        on_date     DATE NOT NULL,
-        slot        TEXT NOT NULL,
-        taken       BOOLEAN NOT NULL,
-        recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE (reminder_id, on_date, slot)
-      );`,
-      `CREATE TABLE IF NOT EXISTS reports (
-        id           TEXT PRIMARY KEY,
-        patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        clinician_id TEXT NOT NULL REFERENCES clinicians(id),
-        kind         TEXT NOT NULL,
-        title        TEXT NOT NULL,
-        summary      TEXT NOT NULL,
-        image        TEXT,
-        taken_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-        released_at  TIMESTAMPTZ
-      );`,
-      `CREATE TABLE IF NOT EXISTS notes (
-        id           TEXT PRIMARY KEY,
-        patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-        clinician_id TEXT NOT NULL REFERENCES clinicians(id),
-        body         TEXT NOT NULL,
-        created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`,
-      `CREATE TABLE IF NOT EXISTS audit (
-        seq        BIGSERIAL PRIMARY KEY,
-        at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-        actor_id   TEXT,
-        actor_role TEXT,
-        action     TEXT NOT NULL,
-        entity     TEXT NOT NULL,
-        entity_id  TEXT,
-        patient_id TEXT,
-        outcome    TEXT NOT NULL DEFAULT 'ok' CHECK (outcome IN ('ok', 'denied', 'failed')),
-        prev_hash  TEXT NOT NULL,
-        hash       TEXT NOT NULL
-      );`,
-    ];
+  const ddlStatements = [
+    `CREATE TABLE IF NOT EXISTS schema_migrations (
+      version    TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+    `CREATE TABLE IF NOT EXISTS clinicians (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      credentials TEXT NOT NULL DEFAULT '',
+      specialty   TEXT NOT NULL DEFAULT '',
+      room        TEXT NOT NULL DEFAULT '',
+      photo       TEXT,
+      bio         TEXT,
+      active      BOOLEAN NOT NULL DEFAULT true,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+    `CREATE TABLE IF NOT EXISTS accounts (
+      id                  TEXT PRIMARY KEY,
+      email               TEXT NOT NULL UNIQUE,
+      role                TEXT NOT NULL CHECK (role IN ('clinician', 'admin')),
+      clinician_id        TEXT NOT NULL REFERENCES clinicians(id) ON DELETE RESTRICT,
+      password_hash       TEXT NOT NULL,
+      password_salt       TEXT NOT NULL,
+      kdf                 TEXT NOT NULL,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+      password_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      failed_attempts     INTEGER NOT NULL DEFAULT 0,
+      locked_until        TIMESTAMPTZ,
+      last_sign_in_at     TIMESTAMPTZ,
+      disabled_at         TIMESTAMPTZ
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_accounts_clinician ON accounts(clinician_id);`,
+    `CREATE TABLE IF NOT EXISTS sessions (
+      id           TEXT PRIMARY KEY,
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      token_hash   TEXT NOT NULL UNIQUE,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at   TIMESTAMPTZ NOT NULL,
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      revoked_at   TIMESTAMPTZ,
+      user_agent   TEXT
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);`,
+    `CREATE TABLE IF NOT EXISTS invites (
+      id           TEXT PRIMARY KEY,
+      email        TEXT NOT NULL,
+      role         TEXT NOT NULL CHECK (role IN ('clinician', 'admin')),
+      clinician_id TEXT NOT NULL REFERENCES clinicians(id) ON DELETE CASCADE,
+      token_hash   TEXT NOT NULL UNIQUE,
+      invited_by  TEXT REFERENCES accounts(id) ON DELETE SET NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at  TIMESTAMPTZ NOT NULL,
+      accepted_at TIMESTAMPTZ,
+      revoked_at  TIMESTAMPTZ
+    );`,
+    `CREATE TABLE IF NOT EXISTS password_resets (
+      code_hash  TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at    TIMESTAMPTZ
+    );`,
+    `CREATE TABLE IF NOT EXISTS auth_throttle (
+      key       TEXT PRIMARY KEY,
+      hits      INTEGER NOT NULL DEFAULT 0,
+      window_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+    `CREATE TABLE IF NOT EXISTS patients (
+      id                  TEXT PRIMARY KEY,
+      mrn                 TEXT NOT NULL UNIQUE,
+      op_no               TEXT,
+      name                TEXT NOT NULL,
+      dob                 DATE NOT NULL,
+      phone               TEXT,
+      email               TEXT,
+      address             TEXT,
+      medical_history     TEXT,
+      family_history      TEXT,
+      past_dental_history TEXT,
+      photo               TEXT,
+      last_visit          DATE,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+    `CREATE TABLE IF NOT EXISTS allergies (
+      id         TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      substance  TEXT NOT NULL,
+      reaction   TEXT NOT NULL,
+      severity   TEXT NOT NULL CHECK (severity IN ('mild', 'moderate', 'severe'))
+    );`,
+    `CREATE TABLE IF NOT EXISTS conditions (
+      id         TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      label      TEXT NOT NULL
+    );`,
+    `CREATE TABLE IF NOT EXISTS dental_chart (
+      id         TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      tooth_num  INTEGER NOT NULL CHECK (tooth_num >= 1 AND tooth_num <= 32),
+      condition  TEXT NOT NULL DEFAULT 'sound',
+      notes      TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(patient_id, tooth_num)
+    );`,
+    `CREATE TABLE IF NOT EXISTS appointments (
+      id           TEXT PRIMARY KEY,
+      patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      clinician_id TEXT NOT NULL REFERENCES clinicians(id),
+      starts_at    TIMESTAMPTZ NOT NULL,
+      duration_min INTEGER NOT NULL CHECK (duration_min > 0 AND duration_min <= 480),
+      type         TEXT NOT NULL,
+      status       TEXT NOT NULL CHECK (status IN ('confirmed', 'completed', 'cancelled')),
+      room         TEXT NOT NULL DEFAULT '',
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+    `CREATE TABLE IF NOT EXISTS plans (
+      id           TEXT PRIMARY KEY,
+      patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      clinician_id TEXT NOT NULL REFERENCES clinicians(id),
+      procedure    TEXT NOT NULL,
+      phase        TEXT NOT NULL CHECK (phase IN ('pre', 'post')),
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      published_at TIMESTAMPTZ,
+      locked_at    TIMESTAMPTZ
+    );`,
+    `CREATE TABLE IF NOT EXISTS plan_steps (
+      id      TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+      ordinal INTEGER NOT NULL,
+      title   TEXT NOT NULL,
+      detail  TEXT NOT NULL DEFAULT '',
+      UNIQUE (plan_id, ordinal)
+    );`,
+    `CREATE TABLE IF NOT EXISTS plan_addenda (
+      id         TEXT PRIMARY KEY,
+      plan_id    TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+      author_id  TEXT NOT NULL REFERENCES clinicians(id),
+      body       TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+    `CREATE TABLE IF NOT EXISTS prescriptions (
+      id              TEXT PRIMARY KEY,
+      patient_id      TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      clinician_id    TEXT NOT NULL REFERENCES clinicians(id),
+      drug            TEXT NOT NULL,
+      form            TEXT NOT NULL,
+      dose            TEXT NOT NULL,
+      route           TEXT NOT NULL,
+      frequency       TEXT NOT NULL,
+      duration_days   INTEGER NOT NULL CHECK (duration_days > 0 AND duration_days <= 365),
+      refills         INTEGER NOT NULL DEFAULT 0 CHECK (refills >= 0),
+      indication      TEXT NOT NULL,
+      issued_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+      override_reason TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS reminders (
+      id              TEXT PRIMARY KEY,
+      prescription_id TEXT NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
+      patient_id      TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      times           JSONB NOT NULL,
+      starts_on       DATE NOT NULL,
+      ends_on         DATE NOT NULL
+    );`,
+    `CREATE TABLE IF NOT EXISTS dose_log (
+      id          TEXT PRIMARY KEY,
+      reminder_id TEXT NOT NULL REFERENCES reminders(id) ON DELETE CASCADE,
+      on_date     DATE NOT NULL,
+      slot        TEXT NOT NULL,
+      taken       BOOLEAN NOT NULL,
+      recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (reminder_id, on_date, slot)
+    );`,
+    `CREATE TABLE IF NOT EXISTS reports (
+      id           TEXT PRIMARY KEY,
+      patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      clinician_id TEXT NOT NULL REFERENCES clinicians(id),
+      kind         TEXT NOT NULL,
+      title        TEXT NOT NULL,
+      summary      TEXT NOT NULL,
+      image        TEXT,
+      taken_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+      released_at  TIMESTAMPTZ
+    );`,
+    `CREATE TABLE IF NOT EXISTS notes (
+      id           TEXT PRIMARY KEY,
+      patient_id   TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      clinician_id TEXT NOT NULL REFERENCES clinicians(id),
+      body         TEXT NOT NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+    `CREATE TABLE IF NOT EXISTS audit (
+      seq        BIGSERIAL PRIMARY KEY,
+      at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+      actor_id   TEXT,
+      actor_role TEXT,
+      action     TEXT NOT NULL,
+      entity     TEXT NOT NULL,
+      entity_id  TEXT,
+      patient_id TEXT,
+      outcome    TEXT NOT NULL DEFAULT 'ok' CHECK (outcome IN ('ok', 'denied', 'failed')),
+      prev_hash  TEXT NOT NULL,
+      hash       TEXT NOT NULL
+    );`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_prev_hash ON audit(prev_hash);`,
+    `CREATE OR REPLACE FUNCTION audit_is_append_only() RETURNS TRIGGER AS $$
+     BEGIN
+       RAISE EXCEPTION 'audit is append only';
+     END;
+     $$ LANGUAGE plpgsql;`,
+  ];
 
-    for (const stmt of ddlStatements) {
-      try {
-        await client.query(stmt);
-      } catch (e) {
-        console.warn("Neon fallback statement execute:", e instanceof Error ? e.message : String(e));
-      }
+  for (const stmt of ddlStatements) {
+    try {
+      await client.query(stmt);
+    } catch (e) {
+      console.warn("Neon fallback statement execute:", e instanceof Error ? e.message : String(e));
     }
   }
+
+  try {
+    await client.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_no_update') THEN
+          CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit FOR EACH ROW EXECUTE FUNCTION audit_is_append_only();
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_no_delete') THEN
+          CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit FOR EACH ROW EXECUTE FUNCTION audit_is_append_only();
+        END IF;
+      END $$;
+    `);
+  } catch (e) {}
 
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS op_no TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT;`; } catch (e) {}

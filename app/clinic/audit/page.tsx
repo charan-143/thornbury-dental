@@ -10,7 +10,12 @@ export default async function AuditPage() {
 
   const entries = await readAudit(200);
   const chain = await verifyChain();
-  const names = (await db()`SELECT id, name FROM clinicians`) as unknown as Array<{ id: string; name: string }>;
+  let names: Array<{ id: string; name: string }> = [];
+  try {
+    names = (await db()`SELECT id, name FROM clinicians`) as unknown as Array<{ id: string; name: string }>;
+  } catch (err) {
+    names = [];
+  }
 
   const formattedEntries: AuditEntryItem[] = entries.map((e) => ({
     seq: e.seq,
