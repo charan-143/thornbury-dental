@@ -26,6 +26,90 @@ export function assertDatabaseUrl(): string {
 let neonInitPromise: Promise<void> | null = null;
 
 async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
+  // Self-healing pre-migration: if `patients` table already exists from an older schema
+  // or separate branch, ensure its columns and primary key constraints match what
+  // dependent tables (allergies, plans, prescriptions, etc.) require for foreign keys.
+  try {
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'patients') THEN
+          -- 1. Ensure id column exists
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'id') THEN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'patient_id') THEN
+              ALTER TABLE patients RENAME COLUMN patient_id TO id;
+            ELSE
+              ALTER TABLE patients ADD COLUMN id TEXT;
+              UPDATE patients SET id = 'p_' || substr(md5(random()::text), 1, 12) WHERE id IS NULL;
+              ALTER TABLE patients ALTER COLUMN id SET NOT NULL;
+            END IF;
+          END IF;
+
+          -- 2. Ensure id is TEXT
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'patients' AND column_name = 'id' AND data_type != 'text'
+          ) THEN
+            ALTER TABLE patients ALTER COLUMN id TYPE TEXT USING id::text;
+          END IF;
+
+          -- 3. Ensure a primary key or unique constraint exists on id
+          IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+            WHERE t.relname = 'patients' AND (c.contype = 'p' OR c.contype = 'u') AND a.attname = 'id'
+          ) THEN
+            BEGIN
+              ALTER TABLE patients ADD PRIMARY KEY (id);
+            EXCEPTION WHEN OTHERS THEN
+              BEGIN
+                ALTER TABLE patients ADD CONSTRAINT patients_id_unique UNIQUE (id);
+              EXCEPTION WHEN OTHERS THEN
+                NULL;
+              END;
+            END;
+          END IF;
+
+          -- 4. Ensure name column exists
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'name') THEN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'first_name') THEN
+              ALTER TABLE patients ADD COLUMN name TEXT;
+              UPDATE patients SET name = TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''));
+              UPDATE patients SET name = 'Unknown Patient' WHERE name IS NULL OR name = '';
+            ELSE
+              ALTER TABLE patients ADD COLUMN name TEXT NOT NULL DEFAULT 'Unknown Patient';
+            END IF;
+          END IF;
+
+          -- 5. Ensure other required columns exist
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'mrn') THEN
+            ALTER TABLE patients ADD COLUMN mrn TEXT;
+            UPDATE patients SET mrn = 'TD-' || (40000 + (ROW_NUMBER() OVER ())::int) WHERE mrn IS NULL;
+          END IF;
+
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'dob') THEN
+            ALTER TABLE patients ADD COLUMN dob DATE DEFAULT '1990-01-01';
+          END IF;
+
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'phone') THEN
+            ALTER TABLE patients ADD COLUMN phone TEXT;
+          END IF;
+
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'email') THEN
+            ALTER TABLE patients ADD COLUMN email TEXT;
+          END IF;
+
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patients' AND column_name = 'created_at') THEN
+            ALTER TABLE patients ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+          END IF;
+        END IF;
+      END $$;
+    `);
+  } catch (e) {
+    console.warn("Neon patients pre-migration check:", e instanceof Error ? e.message : String(e));
+  }
 
   const ddlStatements = [
     `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -241,7 +325,13 @@ async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
     try {
       await client.query(stmt);
     } catch (e) {
-      console.warn("Neon fallback statement execute:", e instanceof Error ? e.message : String(e));
+      const err = e as { message?: string; detail?: string; hint?: string };
+      console.warn(
+        "Neon fallback statement execute:",
+        err.message || String(e),
+        err.detail ? `[Detail: ${err.detail}]` : "",
+        err.hint ? `[Hint: ${err.hint}]` : "",
+      );
     }
   }
 
@@ -259,6 +349,11 @@ async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
     `);
   } catch (e) {}
 
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Unknown Patient';`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS mrn TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS dob DATE DEFAULT '1990-01-01';`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS phone TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS email TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS op_no TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS medical_history TEXT;`; } catch (e) {}
