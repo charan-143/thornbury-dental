@@ -24,9 +24,32 @@ export function assertDatabaseUrl(): string {
   return url;
 }
 
+import fs from "node:fs";
+import path from "node:path";
+
 let neonInitPromise: Promise<void> | null = null;
 
 async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
+  try {
+    const migrationPath = path.join(process.cwd(), "migrations", "0001_init.sql");
+    if (fs.existsSync(migrationPath)) {
+      const migrationSql = fs.readFileSync(migrationPath, "utf8");
+      await client.query(migrationSql);
+    }
+  } catch (e) {
+    console.warn("Neon migration init check:", e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    await client`
+      CREATE TABLE IF NOT EXISTS auth_throttle (
+        key       TEXT PRIMARY KEY,
+        hits      INTEGER NOT NULL DEFAULT 0,
+        window_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `;
+  } catch (e) {}
+
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS op_no TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS medical_history TEXT;`; } catch (e) {}
