@@ -15,19 +15,19 @@ const csp = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  // Next injects inline bootstrap scripts, so unsafe-inline is required for
-  // scripts until a nonce-based setup replaces it. Documented, not forgotten.
-  // unsafe-eval is added in development only, because the dev-mode HMR runtime
-  // compiles with eval. Production never gets it.
   [
     "script-src 'self' 'unsafe-inline'",
     process.env.NODE_ENV === "development" ? "'unsafe-eval'" : "",
     "https://cdn.jsdelivr.net",
+    "https://vercel.live",
+    "https://*.vercel.com",
+    "https://*.vercel.app",
   ].filter(Boolean).join(" "),
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
-  "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
-  "img-src 'self' data: blob: https://picsum.photos https://fastly.picsum.photos",
-  "connect-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://vercel.live",
+  "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://assets.vercel.com",
+  "img-src 'self' data: blob: https://picsum.photos https://fastly.picsum.photos https://vercel.com https://vercel.live https://*.vercel-storage.com",
+  "connect-src 'self' https://vercel.live wss://vercel.live https://*.pusher.com wss://*.pusher.com https://*.vercel.com",
+  "frame-src 'self' https://vercel.live",
   "upgrade-insecure-requests",
 ].join("; ");
 
