@@ -18,7 +18,7 @@ import { db, nowIso, sha256 } from "./db";
  */
 
 const GENESIS = "0".repeat(64);
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 15;
 
 export type AuditEntry = {
   actorId: string | null;
@@ -86,10 +86,22 @@ export async function record(entry: AuditEntry): Promise<void> {
       `;
       return;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      // Someone else appended between our read and our write. Read the new
-      // tail and try again rather than forking the chain.
-      if (message.includes("idx_audit_prev_hash") || message.includes("duplicate key")) continue;
+      const message = error instanceof Error ? error.message : String(error ?? "");
+      const lower = message.toLowerCase();
+      // Someone else appended between our read and our write.
+      const isContention =
+        lower.includes("idx_audit_prev_hash") ||
+        lower.includes("duplicate key") ||
+        lower.includes("unique constraint") ||
+        lower.includes("audit_prev_hash") ||
+        lower.includes("prev_hash");
+
+      if (isContention) {
+        // Randomized exponential backoff so concurrent workers resolve quickly without locking step
+        const delayMs = Math.floor(10 + Math.random() * 20 * (attempt + 1));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
 
       console.error("audit write failed:", message || "unknown");
       return;

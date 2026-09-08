@@ -52,8 +52,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
 
-  // node:sqlite is a Node builtin used only on the server.
-  serverExternalPackages: ["@electric-sql/pglite"],
+  // Server packages excluded from Webpack bundling to prevent vendor chunk issues
+  serverExternalPackages: ["@electric-sql/pglite", "@neondatabase/serverless"],
 
   images: {
     remotePatterns: [

@@ -4,12 +4,16 @@ import { recordChartAccess, requireStaff } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { DentalChart } from "@/components/dental-chart";
 import { PatientChartTabs } from "@/components/patient-chart-tabs";
+import { PatientDemographicsView } from "@/components/patient-demographics-view";
+import { TreatmentPlansView } from "@/components/treatment-plans-view";
+import { PrescriptionsView } from "@/components/prescriptions-view";
+import { ReportsAndImagingView, type ReportItem } from "@/components/reports-and-imaging-view";
 
 /**
  * Patient chart.
  *
  * Enhanced encounter view with interactive 32-tooth odontogram, tabbed section
- * navigation, and high-visibility medical safety warnings.
+ * navigation, dedicated Demographics/Overview tab, and high-visibility medical safety warnings.
  */
 
 export const dynamic = "force-dynamic";
@@ -31,14 +35,27 @@ function age(dob: Date | string): number {
   return y;
 }
 
-type Patient = { id: string; mrn: string; name: string; dob: Date; phone: string | null; email: string | null; photo: string | null; last_visit: Date | null };
+type Patient = {
+  id: string;
+  mrn: string;
+  op_no: string | null;
+  name: string;
+  dob: Date;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  medical_history: string | null;
+  family_history: string | null;
+  past_dental_history: string | null;
+  photo: string | null;
+  last_visit: Date | null;
+};
 type Allergy = { substance: string; reaction: string; severity: string };
 type Appt = { id: string; starts_at: Date; duration_min: number; type: string; status: string; clinician_name: string };
 type Plan = { id: string; procedure: string; phase: string; published_at: Date | null; clinician_name: string };
 type Step = { plan_id: string; title: string; detail: string };
 type Addendum = { plan_id: string; body: string; created_at: Date };
 type Rx = { id: string; drug: string; dose: string; frequency: string; duration_days: number; indication: string; issued_at: Date; override_reason: string | null; clinician_name: string };
-type Report = { id: string; kind: string; title: string; summary: string; taken_at: Date; released_at: Date | null };
 
 export default async function PatientChartPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,7 +63,8 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
 
   const sql = db();
   const found = (await sql`
-    SELECT id, mrn, name, dob, phone, email, photo, last_visit FROM patients WHERE id = ${id}
+    SELECT id, mrn, op_no, name, dob, phone, email, address, medical_history, family_history, past_dental_history, photo, last_visit
+    FROM patients WHERE id = ${id}
   `) as unknown as Patient[];
   const patient = found[0];
   if (!patient) notFound();
@@ -56,6 +74,7 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
 
   const allergies = (await sql`SELECT substance, reaction, severity FROM allergies WHERE patient_id = ${id}`) as unknown as Allergy[];
   const conditions = (await sql`SELECT label FROM conditions WHERE patient_id = ${id}`) as unknown as Array<{ label: string }>;
+  const clinicians = (await sql`SELECT id, name FROM clinicians ORDER BY name`) as unknown as Array<{ id: string; name: string }>;
   const appts = (await sql`
     SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, c.name AS clinician_name
     FROM appointments a JOIN clinicians c ON c.id = a.clinician_id
@@ -70,158 +89,103 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
   const addenda = (await sql`
     SELECT a.plan_id, a.body, a.created_at FROM plan_addenda a
     JOIN plans p ON p.id = a.plan_id WHERE p.patient_id = ${id} ORDER BY a.created_at`) as unknown as Addendum[];
-  const rxs = (await sql`
-    SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
-           r.override_reason, c.name AS clinician_name
-    FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
-    WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC`) as unknown as Rx[];
-  const reports = (await sql`
-    SELECT id, kind, title, summary, taken_at, released_at FROM reports
-    WHERE patient_id = ${id} ORDER BY taken_at DESC`) as unknown as Report[];
+  let rxs: Rx[] = [];
+  try {
+    rxs = (await sql`
+      SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
+             r.override_reason, c.name AS clinician_name
+      FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
+      WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC`) as unknown as Rx[];
+  } catch (err) {
+    console.warn("prescriptions query failed on server page render, using fallback query:", err instanceof Error ? err.message : String(err));
+    try {
+      rxs = (await sql`
+        SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
+               c.name AS clinician_name
+        FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
+        WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC`) as unknown as Rx[];
+    } catch (e2) {
+      rxs = [];
+    }
+  }
+
+  let reports: ReportItem[] = [];
+  try {
+    reports = (await sql`
+      SELECT r.id, r.kind, r.title, r.summary, r.image, r.taken_at, r.released_at, r.clinician_id, c.name AS clinician_name
+      FROM reports r LEFT JOIN clinicians c ON c.id = r.clinician_id
+      WHERE r.patient_id = ${id} ORDER BY r.taken_at DESC`) as unknown as ReportItem[];
+  } catch (err) {
+    try {
+      reports = (await sql`
+        SELECT id, kind, title, summary, image, taken_at, released_at, clinician_id FROM reports
+        WHERE patient_id = ${id} ORDER BY taken_at DESC`) as unknown as ReportItem[];
+    } catch (e2) {
+      reports = [];
+    }
+  }
+
+  let savedChartRows: Array<{ tooth_num: number; condition: string; notes: string | null }> = [];
+  try {
+    savedChartRows = (await sql`
+      SELECT tooth_num, condition, notes FROM dental_chart WHERE patient_id = ${id}
+    `) as Array<{ tooth_num: number; condition: string; notes: string | null }>;
+  } catch (err) {
+    console.warn("dental_chart query failed on server page render, using default chart:", err instanceof Error ? err.message : String(err));
+  }
 
   const overviewSection = (
-    <div key="sec-overview" style={{ display: "grid", gap: 24 }}>
-      {/* 32-Tooth Odontogram */}
-      <DentalChart patientId={patient.id} />
+    <div key="sec-overview">
+      <PatientDemographicsView
+        patient={{
+          ...patient,
+          allergies,
+          conditions,
+        }}
+      />
+    </div>
+  );
 
-      {/* Record Demographics & Warnings */}
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Patient Demographics & Medical Safety</h2>
-          <div className="spacer" />
-          <span className="badge badge-info">{age(patient.dob)} years</span>
-          <span className="badge">{patient.mrn}</span>
-        </div>
-        <div className="panel-body">
-          {allergies.length > 0 ? allergies.map((a, idx) => (
-            <div className="alert alert-critical" key={`alg-${a.substance}-${idx}`} role="alert">
-              <i className="ph ph-warning-octagon" aria-hidden="true" />
-              <span>
-                <strong>ALLERGY ALERT: {a.substance}, {a.severity}.</strong> {a.reaction}.
-                Check before prescribing or administering treatment.
-              </span>
-            </div>
-          )) : (
-            <div className="alert">
-              <i className="ph ph-info" aria-hidden="true" />
-              <span>No allergies recorded on file.</span>
-            </div>
-          )}
-
-          {conditions.length > 0 && (
-            <div className="alert alert-warning">
-              <i className="ph ph-heartbeat" aria-hidden="true" />
-              <span><strong>Medical History:</strong> {conditions.map((c) => c.label).join(". ")}.</span>
-            </div>
-          )}
-
-          <dl className="dl">
-            <dt>Date of birth</dt><dd>{day(patient.dob)}</dd>
-            <dt>Telephone</dt><dd>{patient.phone ?? "not recorded"}</dd>
-            <dt>Email</dt><dd>{patient.email ?? "not recorded"}</dd>
-            <dt>Last visit</dt><dd>{day(patient.last_visit)}</dd>
-          </dl>
-        </div>
-      </section>
+  const odontogramSection = (
+    <div key="sec-odontogram" style={{ display: "grid", gap: 24 }}>
+      <DentalChart patientId={patient.id} initialChart={savedChartRows} />
     </div>
   );
 
   const plansSection = (
-    <section key="sec-plans" className="panel">
-      <div className="panel-head">
-        <h2>Treatment Plans</h2>
-        <div className="spacer" />
-        <span className="badge">{plans.length} total</span>
-      </div>
-      <div className="panel-body">
-        {plans.length ? plans.map((plan) => (
-          <article className="card" key={`plan-${plan.id}`} style={{ display: "grid", gap: 12 }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <strong style={{ font: "var(--title-md)", color: "var(--ink)" }}>
-                {plan.phase === "pre" ? "Before" : "After"} {plan.procedure}
-              </strong>
-              <span style={{ marginLeft: "auto" }}>
-                {plan.published_at
-                  ? <span className="locked"><i className="ph ph-lock-simple" aria-hidden="true" /> Locked {day(plan.published_at)}</span>
-                  : <span className="badge badge-warning">Draft</span>}
-              </span>
-            </div>
-            <div className="steps">
-              {steps.filter((s) => s.plan_id === plan.id).map((s, idx) => (
-                <div className="step" key={`step-${plan.id}-${idx}`}>
-                  <i className="ph ph-dot-outline" aria-hidden="true" />
-                  <div><strong>{s.title}</strong>{s.detail ? <p>{s.detail}</p> : null}</div>
-                </div>
-              ))}
-            </div>
-            {addenda.filter((a) => a.plan_id === plan.id).map((a, idx) => (
-              <div className="alert" key={`add-${plan.id}-${idx}`}>
-                <i className="ph ph-note-pencil" aria-hidden="true" />
-                <span><strong>{day(a.created_at)}.</strong> {a.body}</span>
-              </div>
-            ))}
-            <p className="meta">Written by {plan.clinician_name}.</p>
-          </article>
-        )) : <p className="meta">No treatment plans recorded.</p>}
-      </div>
-    </section>
+    <TreatmentPlansView
+      key="sec-plans"
+      patientId={patient.id}
+      conditions={conditions}
+      plans={plans}
+      steps={steps}
+      addenda={addenda}
+    />
   );
 
   const rxsSection = (
-    <section key="sec-rxs" className="panel">
-      <div className="panel-head">
-        <h2>Prescriptions</h2>
-        <div className="spacer" />
-        <span className="badge">{rxs.length} total</span>
-      </div>
-      <div className="panel-body">
-        {rxs.length ? rxs.map((rx) => (
-          <div className="card card-soft" key={`rx-${rx.id}`} style={{ display: "grid", gap: 6 }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
-              <strong style={{ font: "var(--title-sm)", color: "var(--ink)" }}>{rx.drug} {rx.dose}</strong>
-              <span className="meta">{rx.frequency}, {rx.duration_days} days</span>
-              <span className="locked" style={{ marginLeft: "auto" }}>
-                <i className="ph ph-lock-simple" aria-hidden="true" /> {day(rx.issued_at)}
-              </span>
-            </div>
-            <span className="meta">{rx.indication}. Prescribed by {rx.clinician_name}.</span>
-            {rx.override_reason && (
-              <div className="alert alert-warning">
-                <i className="ph ph-warning" aria-hidden="true" />
-                <span><strong>Issued over a blocking alert.</strong> {rx.override_reason}</span>
-              </div>
-            )}
-          </div>
-        )) : <p className="meta">Nothing issued.</p>}
-      </div>
-    </section>
+    <PrescriptionsView
+      key="sec-rxs"
+      patientId={patient.id}
+      patientName={patient.name}
+      patientMrn={patient.mrn}
+      patientOpNo={patient.op_no}
+      patientAddress={patient.address}
+      allergies={allergies}
+      rxs={rxs}
+    />
   );
 
   const reportsSection = (
-    <section key="sec-reports" className="panel">
-      <div className="panel-head">
-        <h2>Reports & Imaging</h2>
-        <div className="spacer" />
-        <span className="badge">{reports.length} total</span>
-      </div>
-      <div className="panel-body">
-        {reports.length ? reports.map((r) => (
-          <div className="card card-soft" key={`rep-${r.id}`} style={{ display: "grid", gap: 8 }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <strong style={{ font: "var(--title-sm)", color: "var(--ink)" }}>{r.title}</strong>
-              <span className="badge badge-info">{r.kind}</span>
-              <span style={{ marginLeft: "auto" }}>
-                {r.released_at
-                  ? <span className="badge badge-success">Released {day(r.released_at)}</span>
-                  : <span className="badge badge-warning">Held for review</span>}
-              </span>
-            </div>
-            <p className="meta">{r.summary}</p>
-          </div>
-        )) : <p className="meta">No imaging or test records.</p>}
-      </div>
-    </section>
+    <ReportsAndImagingView
+      key="sec-reports"
+      patientId={patient.id}
+      patientName={patient.name}
+      reports={reports}
+      clinicians={clinicians}
+    />
   );
+
 
   const apptsSection = (
     <section key="sec-appts" className="panel">
@@ -248,12 +212,14 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
     </section>
   );
 
+  const displayOpNo = patient.op_no || patient.mrn;
+
   return (
     <>
       <header className="topbar">
         <div>
           <h1>{patient.name}</h1>
-          <p className="meta">MRN: {patient.mrn} • {age(patient.dob)} years old</p>
+          <p className="meta">OP No: {displayOpNo} • MRN: {patient.mrn} • {age(patient.dob)} years old</p>
         </div>
         <div className="spacer" />
         <Link className="btn btn-primary btn-sm" href={`/clinic/schedule/new?patientId=${patient.id}`}>
@@ -267,6 +233,7 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
       <main className="page" id="main">
         <PatientChartTabs
           overviewContent={overviewSection}
+          odontogramContent={odontogramSection}
           plansContent={plansSection}
           rxsContent={rxsSection}
           reportsContent={reportsSection}
