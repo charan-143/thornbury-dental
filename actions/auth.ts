@@ -48,7 +48,11 @@ export async function signInAction(_prev: FormState, formData: FormData): Promis
 }
 
 export async function signOutAction(): Promise<void> {
-  await signOut();
+  try {
+    await signOut();
+  } catch (err) {
+    console.warn("signOutAction notice:", err instanceof Error ? err.message : String(err));
+  }
   redirect("/");
 }
 
