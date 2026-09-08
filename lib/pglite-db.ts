@@ -33,14 +33,20 @@ function on(dayOffset: number): string {
 async function initPGlite(): Promise<any> {
   if (pgliteInstance) return pgliteInstance;
 
-  let PGliteModule: any;
+  let PGlite: any;
   try {
-    PGliteModule = await import("@electric-sql/pglite");
+    const mod: any = require("@electric-sql/pglite");
+    PGlite = mod.PGlite ?? mod.default ?? mod;
   } catch {
-    const dynamicImport = new Function("m", "return import(m)");
-    PGliteModule = await dynamicImport("@electric-sql/pglite");
+    try {
+      const mod: any = await import("@electric-sql/pglite");
+      PGlite = mod.PGlite ?? mod.default ?? mod;
+    } catch {
+      const dynamicImport = new Function("m", "return import(m)");
+      const mod: any = await dynamicImport("@electric-sql/pglite");
+      PGlite = mod.PGlite ?? mod.default ?? mod;
+    }
   }
-  const PGlite = PGliteModule.PGlite ?? PGliteModule.default ?? PGliteModule;
 
   const dataDir = path.join(process.cwd(), ".data", "pglite");
   try {
