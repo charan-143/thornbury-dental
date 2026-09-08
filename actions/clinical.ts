@@ -61,14 +61,8 @@ export async function createPatientAction(
   const email = trimmed(formData, "email");
   const customOpNo = trimmed(formData, "opNo");
   const address = trimmed(formData, "address");
-  const medicalHistory = trimmed(formData, "medicalHistory");
-  const familyHistory = trimmed(formData, "familyHistory");
-  const pastDentalHistory = trimmed(formData, "pastDentalHistory");
-  const allergyText = trimmed(formData, "allergies");
-  const conditionText = trimmed(formData, "conditions");
   const values = submitted(formData, [
     "name", "dob", "phone", "email", "opNo", "address",
-    "medicalHistory", "familyHistory", "pastDentalHistory", "allergies", "conditions"
   ]);
 
   if (!name) return { error: "Enter the patient name.", values };
@@ -90,11 +84,14 @@ export async function createPatientAction(
   const mrn = `TD-${40000 + (seq[0]?.n ?? 0) + 1}`;
   const opNo = customOpNo || `OP-${40000 + (seq[0]?.n ?? 0) + 1}`;
 
+  // Identity and contact details only. The history columns stay on the table
+  // and are filled in from the chart afterwards; registration no longer
+  // collects them.
   try {
     await sql`
-      INSERT INTO patients (id, mrn, op_no, name, dob, phone, email, address, medical_history, family_history, past_dental_history)
+      INSERT INTO patients (id, mrn, op_no, name, dob, phone, email, address)
       VALUES (${id}, ${mrn}, ${opNo}, ${name}, ${dob}, ${phone || null}, ${email || null},
-              ${address || null}, ${medicalHistory || null}, ${familyHistory || null}, ${pastDentalHistory || null})
+              ${address || null})
     `;
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -103,18 +100,6 @@ export async function createPatientAction(
     }
     console.error("patient create failed:", message || "unknown");
     return { error: "The patient could not be created. Try again.", values };
-  }
-
-  // One allergy or condition per line, so staff are not fighting a comma parser.
-  for (const line of allergyText.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    const [substance, reaction] = line.split(",").map((s) => s.trim());
-    await sql`
-      INSERT INTO allergies (id, patient_id, substance, reaction, severity)
-      VALUES (${newId("al")}, ${id}, ${substance ?? line}, ${reaction || "Reaction not recorded"}, ${"severe"})
-    `;
-  }
-  for (const line of conditionText.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    await sql`INSERT INTO conditions (id, patient_id, label) VALUES (${newId("cn")}, ${id}, ${line})`;
   }
 
   await record({
