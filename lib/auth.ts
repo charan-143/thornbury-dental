@@ -69,22 +69,41 @@ const normalise = (email: string) => String(email ?? "").trim().toLowerCase();
  */
 async function throttled(key: string): Promise<boolean> {
   const sql = db();
-  const rows = (await sql`
-    SELECT hits, window_at FROM auth_throttle WHERE key = ${key}
-  `) as Array<{ hits: number; window_at: Date }>;
-  const row = rows[0];
+  try {
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS auth_throttle (
+          key       TEXT PRIMARY KEY,
+          hits      INTEGER NOT NULL DEFAULT 0,
+          window_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `;
+    } catch (e) {}
 
-  if (!row || Date.now() - new Date(row.window_at).getTime() > THROTTLE_WINDOW_MS) {
-    await sql`
-      INSERT INTO auth_throttle (key, hits, window_at) VALUES (${key}, 1, now())
-      ON CONFLICT (key) DO UPDATE SET hits = 1, window_at = now()
-    `;
+    const rows = (await sql`
+      SELECT hits, window_at FROM auth_throttle WHERE key = ${key}
+    `) as Array<{ hits: number; window_at: Date }>;
+    const row = rows[0];
+
+    if (!row || Date.now() - new Date(row.window_at).getTime() > THROTTLE_WINDOW_MS) {
+      await sql`
+        INSERT INTO auth_throttle (key, hits, window_at) VALUES (${key}, 1, now())
+        ON CONFLICT (key) DO UPDATE SET hits = 1, window_at = now()
+      `;
+      return false;
+    }
+
+    if (row.hits >= THROTTLE_LIMIT) return true;
+    await sql`UPDATE auth_throttle SET hits = hits + 1 WHERE key = ${key}`;
     return false;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("auth_throttle") || msg.includes("42P01")) {
+      console.warn("auth_throttle notice: table will be created on database initialization", msg);
+      return false;
+    }
+    throw err;
   }
-
-  if (row.hits >= THROTTLE_LIMIT) return true;
-  await sql`UPDATE auth_throttle SET hits = hits + 1 WHERE key = ${key}`;
-  return false;
 }
 
 /** Digest of the client address, so the throttle table holds no raw addresses. */
