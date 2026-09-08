@@ -1,13 +1,17 @@
 import Link from "next/link";
-import nextDynamic from "next/dynamic";
 import { db } from "@/lib/db";
+import { HeroDentalModel } from "@/components/hero-dental-model";
 
-const HeroDentalModel = nextDynamic(
-  () => import("@/components/hero-dental-model").then((mod) => mod.HeroDentalModel),
-  {
-    ssr: true,
-  }
-);
+// HeroDentalModel is imported directly rather than through next/dynamic.
+//
+// It carries "use client", and the App Router already gives every client
+// component its own chunk, so the wrapper bought no code splitting. What it did
+// buy was a second layer of indirection — a lazy import resolved through .then()
+// — that the client reference manifest for this route does not track reliably.
+// On any recompile that shifted module ids, rendering this page threw
+// "__webpack_modules__[moduleId] is not a function" from inside the server
+// render: intermittently, and only just after some other route had compiled.
+// ssr: true was the default anyway, so nothing about the rendering changes.
 
 /**
  * Public site.
