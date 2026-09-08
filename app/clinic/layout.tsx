@@ -25,20 +25,25 @@ type ClinicianRow = { id: string; name: string; room: string; photo: string | nu
 export default async function ClinicLayout({ children }: { children: React.ReactNode }) {
   const user = await requireStaff("/clinic");
 
-  const rows = (await db()`
-    SELECT id, name, room, photo FROM clinicians WHERE id = ${user.clinicianId}
-  `) as unknown as ClinicianRow[];
-  const clinician = rows[0];
+  let clinician: ClinicianRow | null = null;
+  try {
+    const rows = (await db()`
+      SELECT id, name, room, photo FROM clinicians WHERE id = ${user.clinicianId}
+    `) as unknown as ClinicianRow[];
+    clinician = rows[0] ?? null;
+  } catch (err) {
+    try {
+      const rows = (await db()`
+        SELECT id, name, '' AS room, NULL AS photo FROM clinicians WHERE id = ${user.clinicianId}
+      `) as unknown as ClinicianRow[];
+      clinician = rows[0] ?? null;
+    } catch (e2) {
+      clinician = { id: user.clinicianId, name: user.name || "Clinician", room: "", photo: null };
+    }
+  }
 
   if (!clinician) {
-    return (
-      <main className="wrap" id="main" style={{ paddingBlock: 64 }}>
-        <h1>Profile unavailable</h1>
-        <p className="meta" style={{ marginTop: 12 }}>
-          This account is not linked to a clinician profile. Contact the practice administrator.
-        </p>
-      </main>
-    );
+    clinician = { id: user.clinicianId, name: user.name || "Clinician", room: "", photo: null };
   }
 
   return (

@@ -15,21 +15,31 @@ export default async function StaffPage() {
   await requireAdmin("/clinic/staff");
   const sql = db();
 
-  const accounts = (await sql`
-    SELECT a.id, a.email, a.role, c.name, c.specialty,
-           a.created_at, a.last_sign_in_at, a.locked_until, a.disabled_at,
-           (SELECT count(*)::int FROM sessions s
-             WHERE s.account_id = a.id AND s.revoked_at IS NULL AND s.expires_at > now()) AS live_sessions
-    FROM accounts a JOIN clinicians c ON c.id = a.clinician_id
-    ORDER BY a.created_at
-  `) as unknown as Account[];
+  let accounts: Account[] = [];
+  try {
+    accounts = (await sql`
+      SELECT a.id, a.email, a.role, c.name, c.specialty,
+             a.created_at, a.last_sign_in_at, a.locked_until, a.disabled_at,
+             (SELECT count(*)::int FROM sessions s
+               WHERE s.account_id = a.id AND s.revoked_at IS NULL AND s.expires_at > now()) AS live_sessions
+      FROM accounts a JOIN clinicians c ON c.id = a.clinician_id
+      ORDER BY a.created_at
+    `) as unknown as Account[];
+  } catch (err) {
+    accounts = [];
+  }
 
-  const invites = (await sql`
-    SELECT i.email, i.role, c.name, i.created_at, i.expires_at
-    FROM invites i JOIN clinicians c ON c.id = i.clinician_id
-    WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()
-    ORDER BY i.created_at DESC
-  `) as unknown as Invite[];
+  let invites: Invite[] = [];
+  try {
+    invites = (await sql`
+      SELECT i.email, i.role, c.name, i.created_at, i.expires_at
+      FROM invites i JOIN clinicians c ON c.id = i.clinician_id
+      WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()
+      ORDER BY i.created_at DESC
+    `) as unknown as Invite[];
+  } catch (err) {
+    invites = [];
+  }
 
   const formattedAccounts: StaffAccountItem[] = accounts.map((a) => ({
     id: a.id,

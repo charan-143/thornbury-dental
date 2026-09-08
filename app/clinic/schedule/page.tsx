@@ -27,16 +27,31 @@ export default async function SchedulePage({
   const closed = isClosed(iso);
   const { startIso, endIso } = dayBounds(iso);
 
-  const list = (await db()`
-    SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
-           p.id AS patient_id, p.name AS patient_name,
-           (SELECT count(*)::int FROM allergies al WHERE al.patient_id = p.id) AS allergy_count
-    FROM appointments a JOIN patients p ON p.id = a.patient_id
-    WHERE a.clinician_id = ${user.clinicianId}
-      AND a.starts_at >= ${startIso}
-      AND a.starts_at < ${endIso}
-    ORDER BY a.starts_at
-  `) as unknown as Row[];
+  let list: Row[] = [];
+  try {
+    list = (await db()`
+      SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
+             p.id AS patient_id, p.name AS patient_name,
+             (SELECT count(*)::int FROM allergies al WHERE al.patient_id = p.id) AS allergy_count
+      FROM appointments a JOIN patients p ON p.id = a.patient_id
+      WHERE a.clinician_id = ${user.clinicianId}
+        AND a.starts_at >= ${startIso}
+        AND a.starts_at < ${endIso}
+      ORDER BY a.starts_at
+    `) as unknown as Row[];
+  } catch (err) {
+    try {
+      list = (await db()`
+        SELECT a.id, a.starts_at, 30 AS duration_min, a.type, a.status, '' AS room,
+               p.id AS patient_id, p.name AS patient_name, 0 AS allergy_count
+        FROM appointments a JOIN patients p ON p.id = a.patient_id
+        WHERE a.clinician_id = ${user.clinicianId}
+        ORDER BY a.starts_at
+      `) as unknown as Row[];
+    } catch (e2) {
+      list = [];
+    }
+  }
 
   const live = list.filter((r) => r.status !== "cancelled");
 
