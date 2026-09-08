@@ -1,6 +1,13 @@
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { db } from "@/lib/db";
-import { HeroDentalModel } from "@/components/hero-dental-model";
+
+const HeroDentalModel = nextDynamic(
+  () => import("@/components/hero-dental-model").then((mod) => mod.HeroDentalModel),
+  {
+    ssr: true,
+  }
+);
 
 /**
  * Public site.

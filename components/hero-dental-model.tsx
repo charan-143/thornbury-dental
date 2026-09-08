@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 
 type LayerId = "all" | "enamel" | "dentin" | "pulp" | "bone";
 
