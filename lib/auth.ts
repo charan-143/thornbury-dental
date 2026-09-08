@@ -98,11 +98,8 @@ async function throttled(key: string): Promise<boolean> {
     return false;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("auth_throttle") || msg.includes("42P01")) {
-      console.warn("auth_throttle notice: table will be created on database initialization", msg);
-      return false;
-    }
-    throw err;
+    console.warn("auth_throttle notice (throttling bypassed on DB error):", msg);
+    return false;
   }
 }
 
