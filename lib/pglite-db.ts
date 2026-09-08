@@ -33,8 +33,14 @@ function on(dayOffset: number): string {
 async function initPGlite(): Promise<any> {
   if (pgliteInstance) return pgliteInstance;
 
-  const dynamicImport = new Function('m', 'return import(m)');
-  const { PGlite } = await dynamicImport("@electric-sql/pglite");
+  let PGliteModule: any;
+  try {
+    PGliteModule = await import("@electric-sql/pglite");
+  } catch {
+    const dynamicImport = new Function("m", "return import(m)");
+    PGliteModule = await dynamicImport("@electric-sql/pglite");
+  }
+  const PGlite = PGliteModule.PGlite ?? PGliteModule.default ?? PGliteModule;
 
   const dataDir = path.join(process.cwd(), ".data", "pglite");
   try {
@@ -53,6 +59,28 @@ async function initPGlite(): Promise<any> {
     const migrationSql = fs.readFileSync(migrationPath, "utf8");
     await pgliteInstance.exec(migrationSql);
   }
+
+  // Ensure patient demographic columns and dental_chart table exist for existing databases
+  await pgliteInstance.exec(`
+    ALTER TABLE patients ADD COLUMN IF NOT EXISTS op_no TEXT;
+    ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE patients ADD COLUMN IF NOT EXISTS medical_history TEXT;
+    ALTER TABLE patients ADD COLUMN IF NOT EXISTS family_history TEXT;
+    ALTER TABLE patients ADD COLUMN IF NOT EXISTS past_dental_history TEXT;
+
+    ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS refills INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS override_reason TEXT;
+
+    CREATE TABLE IF NOT EXISTS dental_chart (
+      id         TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      tooth_num  INTEGER NOT NULL CHECK (tooth_num >= 1 AND tooth_num <= 32),
+      condition  TEXT NOT NULL DEFAULT 'sound',
+      notes      TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(patient_id, tooth_num)
+    );
+  `);
 
   // Seed demo data if clinicians table is empty
   const res = await pgliteInstance.query("SELECT count(*)::int AS n FROM clinicians");
@@ -81,16 +109,81 @@ async function seedDemoData(sql: any) {
   }
 
   const patients = [
-    { id: "p1", mrn: "TD-40182", name: "Rosalind Achebe", dob: "1984-03-11", phone: "+1 (503) 224-7719", email: "rosalind.achebe@example.org", last: on(-21) },
-    { id: "p2", mrn: "TD-40219", name: "Dmitri Vollmer", dob: "1971-11-02", phone: "+1 (503) 917-4402", email: "d.vollmer@example.org", last: on(-3) },
-    { id: "p3", mrn: "TD-40233", name: "Kavitha Nambiar", dob: "1996-06-24", phone: "+1 (971) 288-6153", email: "k.nambiar@example.org", last: on(-58) },
-    { id: "p4", mrn: "TD-40251", name: "Owen Blackwood", dob: "1958-01-19", phone: "+1 (503) 661-2087", email: "o.blackwood@example.org", last: on(-9) },
-    { id: "p5", mrn: "TD-40266", name: "Marisol Cabrera-Reyes", dob: "2001-09-30", phone: "+1 (971) 402-9338", email: "m.cabrera@example.org", last: on(-140) },
+    {
+      id: "p1",
+      mrn: "TD-40182",
+      op_no: "OP-40182",
+      name: "Rosalind Achebe",
+      dob: "1984-03-11",
+      phone: "+1 (503) 224-7719",
+      email: "rosalind.achebe@example.org",
+      address: "742 Evergreen Terrace, Suite 4B, Portland, OR 97201",
+      medical_history: "Type 2 diabetes, diet controlled. Penicillin allergy.",
+      family_history: "Father had early onset periodontitis and hypertension; Mother has Type 2 Diabetes.",
+      past_dental_history: "Root canal treatment on tooth 36 (2023), regular hygiene scaling, crown on tooth 46.",
+      last: on(-21),
+    },
+    {
+      id: "p2",
+      mrn: "TD-40219",
+      op_no: "OP-40219",
+      name: "Dmitri Vollmer",
+      dob: "1971-11-02",
+      phone: "+1 (503) 917-4402",
+      email: "d.vollmer@example.org",
+      address: "1284 Oakridge Lane, Apt 12, Portland, OR 97205",
+      medical_history: "Anticoagulant therapy (apixaban) following deep vein thrombosis in 2022.",
+      family_history: "History of cardiovascular disease in father; mother treated for osteoporosis.",
+      past_dental_history: "Surgical extraction of wisdom tooth 48 (2024), amalgam restorations placed in 2018.",
+      last: on(-3),
+    },
+    {
+      id: "p3",
+      mrn: "TD-40233",
+      op_no: "OP-40233",
+      name: "Kavitha Nambiar",
+      dob: "1996-06-24",
+      phone: "+1 (971) 288-6153",
+      email: "k.nambiar@example.org",
+      address: "350 NW Couch Street, Suite 802, Portland, OR 97209",
+      medical_history: "Moderate latex allergy. Mild asthma managed with salbutamol inhaler as needed.",
+      family_history: "No significant systemic medical history reported; dental fluorosis reported in siblings.",
+      past_dental_history: "Orthodontic treatment with fixed braces (2010–2012), composite fillings on molars 16 & 26.",
+      last: on(-58),
+    },
+    {
+      id: "p4",
+      mrn: "TD-40251",
+      op_no: "OP-40251",
+      name: "Owen Blackwood",
+      dob: "1958-01-19",
+      phone: "+1 (503) 661-2087",
+      email: "o.blackwood@example.org",
+      address: "910 SW Alder Street, Portland, OR 97205",
+      medical_history: "Hypertension, Bisphosphonate therapy for bone density preservation.",
+      family_history: "Mother had rheumatoid arthritis; father had history of stroke at age 72.",
+      past_dental_history: "Multiple ceramic crowns, history of periodontal maintenance every 4 months, full mouth debridement.",
+      last: on(-9),
+    },
+    {
+      id: "p5",
+      mrn: "TD-40266",
+      op_no: "OP-40266",
+      name: "Marisol Cabrera-Reyes",
+      dob: "2001-09-30",
+      phone: "+1 (971) 402-9338",
+      email: "m.cabrera@example.org",
+      address: "4820 SE Hawthorne Blvd, Portland, OR 97215",
+      medical_history: "No chronic systemic conditions. No known drug allergies.",
+      family_history: "Maternal grandmother had type 1 diabetes; no early tooth loss in family.",
+      past_dental_history: "Routine preventive care, pit and fissure sealants placed in childhood, wisdom teeth monitored.",
+      last: on(-140),
+    },
   ];
   for (const p of patients) {
     await sql`
-      INSERT INTO patients (id, mrn, name, dob, phone, email, photo, last_visit)
-      VALUES (${p.id}, ${p.mrn}, ${p.name}, ${p.dob}, ${p.phone}, ${p.email},
+      INSERT INTO patients (id, mrn, op_no, name, dob, phone, email, address, medical_history, family_history, past_dental_history, photo, last_visit)
+      VALUES (${p.id}, ${p.mrn}, ${p.op_no}, ${p.name}, ${p.dob}, ${p.phone}, ${p.email}, ${p.address}, ${p.medical_history}, ${p.family_history}, ${p.past_dental_history},
               ${`https://picsum.photos/seed/${p.id}-patient/240/240`}, ${p.last})
     `;
   }
@@ -285,7 +378,11 @@ function createClientWrapper(pglite: any) {
 
 export async function getPGliteClient() {
   if (!pgliteInitPromise) {
-    pgliteInitPromise = initPGlite();
+    pgliteInitPromise = initPGlite().catch((err) => {
+      console.error("Failed to initialize PGlite database:", err instanceof Error ? err.message : String(err));
+      pgliteInitPromise = null;
+      throw err;
+    });
   }
   const pglite = await pgliteInitPromise;
   return createClientWrapper(pglite);

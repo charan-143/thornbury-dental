@@ -2,10 +2,11 @@
 
 import { useState, type ReactNode } from "react";
 
-type TabKey = "overview" | "plans" | "rxs" | "reports" | "appts";
+type TabKey = "overview" | "odontogram" | "plans" | "rxs" | "reports" | "appts";
 
 interface PatientChartTabsProps {
   overviewContent: ReactNode;
+  odontogramContent: ReactNode;
   plansContent: ReactNode;
   rxsContent: ReactNode;
   reportsContent: ReactNode;
@@ -20,6 +21,7 @@ interface PatientChartTabsProps {
 
 export function PatientChartTabs({
   overviewContent,
+  odontogramContent,
   plansContent,
   rxsContent,
   reportsContent,
@@ -29,8 +31,9 @@ export function PatientChartTabs({
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
 
   const tabs: Array<{ key: TabKey; label: string; icon: string; count?: number }> = [
-    { key: "overview", label: "Overview & Odontogram", icon: "tooth" },
-    { key: "plans", label: "Treatment Plans", icon: "clipboard-text", count: counts.plans },
+    { key: "overview", label: "Demographics / Overview", icon: "identification-card" },
+    { key: "odontogram", label: "Dental Odontogram", icon: "tooth" },
+    { key: "plans", label: "Diagnosis & Treatment Plans", icon: "clipboard-text", count: counts.plans },
     { key: "rxs", label: "Prescriptions", icon: "first-aid-kit", count: counts.rxs },
     { key: "reports", label: "Reports & Imaging", icon: "file-image", count: counts.reports },
     { key: "appts", label: "Visit History", icon: "calendar-blank", count: counts.appts },
@@ -60,11 +63,24 @@ export function PatientChartTabs({
 
       {/* Tab Panels */}
       <div className="chart-tab-content">
-        {activeTab === "overview" && <div key="tab-panel-overview">{overviewContent}</div>}
-        {activeTab === "plans" && <div key="tab-panel-plans">{plansContent}</div>}
-        {activeTab === "rxs" && <div key="tab-panel-rxs">{rxsContent}</div>}
-        {activeTab === "reports" && <div key="tab-panel-reports">{reportsContent}</div>}
-        {activeTab === "appts" && <div key="tab-panel-appts">{apptsContent}</div>}
+        <div key="tab-panel-overview" style={{ display: activeTab === "overview" ? "block" : "none" }}>
+          {overviewContent}
+        </div>
+        <div key="tab-panel-odontogram" style={{ display: activeTab === "odontogram" ? "block" : "none" }}>
+          {odontogramContent}
+        </div>
+        <div key="tab-panel-plans" style={{ display: activeTab === "plans" ? "block" : "none" }}>
+          {plansContent}
+        </div>
+        <div key="tab-panel-rxs" style={{ display: activeTab === "rxs" ? "block" : "none" }}>
+          {rxsContent}
+        </div>
+        <div key="tab-panel-reports" style={{ display: activeTab === "reports" ? "block" : "none" }}>
+          {reportsContent}
+        </div>
+        <div key="tab-panel-appts" style={{ display: activeTab === "appts" ? "block" : "none" }}>
+          {apptsContent}
+        </div>
       </div>
     </div>
   );

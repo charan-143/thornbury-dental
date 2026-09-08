@@ -24,6 +24,33 @@ export function assertDatabaseUrl(): string {
   return url;
 }
 
+let neonInitPromise: Promise<void> | null = null;
+
+async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS op_no TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS medical_history TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS family_history TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS past_dental_history TEXT;`; } catch (e) {}
+
+  try { await client`ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS refills INTEGER NOT NULL DEFAULT 0;`; } catch (e) {}
+  try { await client`ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS override_reason TEXT;`; } catch (e) {}
+
+  try {
+    await client`
+      CREATE TABLE IF NOT EXISTS dental_chart (
+        id         TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        tooth_num  INTEGER NOT NULL CHECK (tooth_num >= 1 AND tooth_num <= 32),
+        condition  TEXT NOT NULL DEFAULT 'sound',
+        notes      TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(patient_id, tooth_num)
+      );
+    `;
+  } catch (e) {}
+}
+
 export function db(): any {
   if (useFallback) {
     return createAsyncPGliteProxy();
@@ -37,6 +64,7 @@ export function db(): any {
         return null;
       }
       neonClient = neon(url);
+      neonInitPromise = ensureNeonColumns(neonClient);
     }
     return neonClient;
   };
@@ -47,35 +75,53 @@ export function db(): any {
   }
 
   const proxy = async (strings: TemplateStringsArray, ...values: any[]) => {
+    if (neonInitPromise) {
+      await neonInitPromise.catch(() => {});
+    }
     try {
       return await client(strings, ...values);
     } catch (error) {
-      console.warn("Neon database query failed. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
-      useFallback = true;
-      const pgliteClient = await getPGliteClient();
-      return await pgliteClient(strings, ...values);
+      if (isConnectivityError(error)) {
+        console.warn("Neon database unreachable. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
+        useFallback = true;
+        const pgliteClient = await getPGliteClient();
+        return await pgliteClient(strings, ...values);
+      }
+      throw error;
     }
   };
 
   proxy.query = async (queryText: string, params: any[] = []) => {
+    if (neonInitPromise) {
+      await neonInitPromise.catch(() => {});
+    }
     try {
       return await client.query(queryText, params);
     } catch (error) {
-      console.warn("Neon database query failed. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
-      useFallback = true;
-      const pgliteClient = await getPGliteClient();
-      return await pgliteClient.query(queryText, params);
+      if (isConnectivityError(error)) {
+        console.warn("Neon database unreachable. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
+        useFallback = true;
+        const pgliteClient = await getPGliteClient();
+        return await pgliteClient.query(queryText, params);
+      }
+      throw error;
     }
   };
 
   proxy.transaction = async (queries: any[]) => {
+    if (neonInitPromise) {
+      await neonInitPromise.catch(() => {});
+    }
     try {
       return await client.transaction(queries);
     } catch (error) {
-      console.warn("Neon database transaction failed. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
-      useFallback = true;
-      const pgliteClient = await getPGliteClient();
-      return await pgliteClient.transaction(queries);
+      if (isConnectivityError(error)) {
+        console.warn("Neon database unreachable. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
+        useFallback = true;
+        const pgliteClient = await getPGliteClient();
+        return await pgliteClient.transaction(queries);
+      }
+      throw error;
     }
   };
 
