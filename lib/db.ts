@@ -308,6 +308,34 @@ async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
   } catch (e) {}
 }
 
+/**
+ * Whether this process may quietly serve clinical data from the local PGlite
+ * database when Neon cannot be reached.
+ *
+ * Off unless asked for, and never on in production. The fallback is useful for
+ * working on a train; it is dangerous anywhere real, because PGlite keeps a
+ * separate copy of the records under .data/ and the application cannot tell
+ * the difference. A practice running on it sees an empty-looking roster, books
+ * appointments into it, writes notes into it, and is told each time that the
+ * save succeeded. None of it reaches Neon, and none of it is in the backups.
+ *
+ * Set ALLOW_LOCAL_DB_FALLBACK=1 to opt in for offline development.
+ */
+function localFallbackAllowed(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  const flag = process.env.ALLOW_LOCAL_DB_FALLBACK;
+  return flag === "1" || flag === "true";
+}
+
+/** Rethrows unless the local fallback has been explicitly opted into. */
+function refuseFallback(error: unknown): never {
+  console.error(
+    "Database unreachable and the local fallback is not enabled. "
+    + "Set ALLOW_LOCAL_DB_FALLBACK=1 for offline development only.",
+  );
+  throw error;
+}
+
 export function db(): any {
   if (useFallback) {
     return createAsyncPGliteProxy();
@@ -315,7 +343,9 @@ export function db(): any {
 
   const getNeon = () => {
     if (!neonClient) {
-      const url = process.env.DATABASE_URL;
+      // Throws when unset, rather than silently redirecting the whole
+      // application to a local database nobody asked for.
+      const url = localFallbackAllowed() ? process.env.DATABASE_URL : assertDatabaseUrl();
       if (!url) {
         useFallback = true;
         return null;
@@ -339,6 +369,7 @@ export function db(): any {
       return await client(strings, ...values);
     } catch (error) {
       if (isConnectivityError(error)) {
+        if (!localFallbackAllowed()) refuseFallback(error);
         console.warn("Neon database unreachable. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
         useFallback = true;
         const pgliteClient = await getPGliteClient();
@@ -356,6 +387,7 @@ export function db(): any {
       return await client.query(queryText, params);
     } catch (error) {
       if (isConnectivityError(error)) {
+        if (!localFallbackAllowed()) refuseFallback(error);
         console.warn("Neon database unreachable. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
         useFallback = true;
         const pgliteClient = await getPGliteClient();
@@ -373,6 +405,7 @@ export function db(): any {
       return await client.transaction(queries);
     } catch (error) {
       if (isConnectivityError(error)) {
+        if (!localFallbackAllowed()) refuseFallback(error);
         console.warn("Neon database unreachable. Falling back to local PGlite database:", error instanceof Error ? error.message : String(error));
         useFallback = true;
         const pgliteClient = await getPGliteClient();

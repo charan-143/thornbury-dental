@@ -13,27 +13,18 @@ type Row = {
 export default async function PatientsPage() {
   await requireStaff("/clinic/patients");
 
-  let patients: Row[] = [];
-  try {
-    patients = (await db()`
-      SELECT p.id, p.mrn, p.name, p.dob, p.photo, p.last_visit,
-             (SELECT count(*)::int FROM allergies a WHERE a.patient_id = p.id) AS allergy_count,
-             (SELECT min(ap.starts_at) FROM appointments ap
-               WHERE ap.patient_id = p.id AND ap.status = 'confirmed' AND ap.starts_at >= now()) AS next_visit
-      FROM patients p
-      ORDER BY p.name
-    `) as unknown as Row[];
-  } catch (err) {
-    try {
-      patients = (await db()`
-        SELECT p.id, p.mrn, p.name, p.dob, NULL AS photo, NULL AS last_visit,
-               0 AS allergy_count, NULL AS next_visit
-        FROM patients p ORDER BY p.name
-      `) as unknown as Row[];
-    } catch (e2) {
-      patients = [];
-    }
-  }
+  // No fallback. The one removed here returned the roster with allergy_count
+  // hard-coded to 0, which clears the allergy marker beside every name on the
+  // list, and its own failure left an empty array that reads as "this practice
+  // has no patients".
+  const patients = (await db()`
+    SELECT p.id, p.mrn, p.name, p.dob, p.photo, p.last_visit,
+           (SELECT count(*)::int FROM allergies a WHERE a.patient_id = p.id) AS allergy_count,
+           (SELECT min(ap.starts_at) FROM appointments ap
+             WHERE ap.patient_id = p.id AND ap.status = 'confirmed' AND ap.starts_at >= now()) AS next_visit
+    FROM patients p
+    ORDER BY p.name
+  `) as unknown as Row[];
 
   const formattedPatients: RosterPatient[] = patients.map((p) => ({
     id: p.id,

@@ -27,31 +27,22 @@ export default async function SchedulePage({
   const closed = isClosed(iso);
   const { startIso, endIso } = dayBounds(iso);
 
-  let list: Row[] = [];
-  try {
-    list = (await db()`
-      SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
-             p.id AS patient_id, p.name AS patient_name,
-             (SELECT count(*)::int FROM allergies al WHERE al.patient_id = p.id) AS allergy_count
-      FROM appointments a JOIN patients p ON p.id = a.patient_id
-      WHERE a.clinician_id = ${user.clinicianId}
-        AND a.starts_at >= ${startIso}
-        AND a.starts_at < ${endIso}
-      ORDER BY a.starts_at
-    `) as unknown as Row[];
-  } catch (err) {
-    try {
-      list = (await db()`
-        SELECT a.id, a.starts_at, 30 AS duration_min, a.type, a.status, '' AS room,
-               p.id AS patient_id, p.name AS patient_name, 0 AS allergy_count
-        FROM appointments a JOIN patients p ON p.id = a.patient_id
-        WHERE a.clinician_id = ${user.clinicianId}
-        ORDER BY a.starts_at
-      `) as unknown as Row[];
-    } catch (e2) {
-      list = [];
-    }
-  }
+  // No fallback. The discarded one dropped the day bounds and reported every
+  // appointment ever booked as though it fell on the chosen date, flattened
+  // every duration to 30 minutes, and set allergy_count to 0 — which is what
+  // draws, or fails to draw, the allergy flag on each slot. The grid below
+  // also uses duration_min to work out which half hours an appointment
+  // already covers, so wrong durations there offer slots that are not free.
+  const list = (await db()`
+    SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
+           p.id AS patient_id, p.name AS patient_name,
+           (SELECT count(*)::int FROM allergies al WHERE al.patient_id = p.id) AS allergy_count
+    FROM appointments a JOIN patients p ON p.id = a.patient_id
+    WHERE a.clinician_id = ${user.clinicianId}
+      AND a.starts_at >= ${startIso}
+      AND a.starts_at < ${endIso}
+    ORDER BY a.starts_at
+  `) as unknown as Row[];
 
   const live = list.filter((r) => r.status !== "cancelled");
 
