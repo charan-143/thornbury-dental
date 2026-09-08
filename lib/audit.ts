@@ -88,13 +88,22 @@ export async function record(entry: AuditEntry): Promise<void> {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error ?? "");
       const lower = message.toLowerCase();
+
       // Someone else appended between our read and our write.
+      //
+      // Matched on SQLSTATE 23505 (unique_violation) and the name of the index
+      // that enforces the chain, never on a bare "prev_hash". That column name
+      // appears in the INSERT above, and drivers that quote the failing
+      // statement back in their error text therefore made every failure look
+      // like contention: a missing table or an unreachable database would be
+      // retried fifteen times and then dropped under a message blaming
+      // concurrency, which is the one explanation that stops anybody looking
+      // for the real cause.
+      const code = (error as { code?: string } | null)?.code;
       const isContention =
-        lower.includes("idx_audit_prev_hash") ||
-        lower.includes("duplicate key") ||
-        lower.includes("unique constraint") ||
-        lower.includes("audit_prev_hash") ||
-        lower.includes("prev_hash");
+        code === "23505"
+        || lower.includes("idx_audit_prev_hash")
+        || lower.includes("audit_prev_hash");
 
       if (isContention) {
         // Randomized exponential backoff so concurrent workers resolve quickly without locking step

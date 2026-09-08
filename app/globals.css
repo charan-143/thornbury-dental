@@ -1523,9 +1523,13 @@ button.row:hover { background: var(--surface-soft); }
   gap: 16px;
 }
 
+/* A hairline, not a slab. The colour is set inline per tooth part so the panel
+   reads as belonging to whatever is highlighted in the diagram, but the tag
+   directly below already carries that colour, so the rule here only needs to
+   hint at the tie rather than restate it four pixels thick. */
 .info-header {
-  border-left: 4px solid var(--primary);
-  padding-left: 12px;
+  border-left: 1px solid var(--primary);
+  padding-left: 10px;
 }
 
 .info-tag {
