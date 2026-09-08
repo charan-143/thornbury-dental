@@ -21,9 +21,12 @@ function ErrorAlert({ message }: { message?: string }) {
 /**
  * Registering a patient.
  *
- * Allergies are one per line rather than a comma-separated field, because
- * "Penicillin, rash" is two facts and a single box invites people to run them
- * together. The record number is not asked for: it is generated.
+ * Identity and contact details only. The clinical history that used to be
+ * collected here — medical, family and past dental history, allergies and
+ * ongoing conditions — was removed at the practice's request; the three
+ * history fields are still editable from the chart, and conditions are
+ * recorded during examination. The record number is not asked for: it is
+ * generated.
  */
 export function NewPatientForm() {
   const [state, action, pending] = useActionState<ClinicalFormState, FormData>(createPatientAction, {});
@@ -70,75 +73,6 @@ export function NewPatientForm() {
           <input className="input" id="np-address" name="address" placeholder="Full postal address..." defaultValue={kept.address ?? ""} key={"addr" + (kept.address ?? "")} />
         </div>
 
-        <div className="field">
-          <label htmlFor="np-medhistory">Medical History</label>
-          <textarea
-            className="textarea"
-            id="np-medhistory"
-            name="medicalHistory"
-            rows={2}
-            defaultValue={kept.medicalHistory ?? ""}
-            key={"mh" + (kept.medicalHistory ?? "")}
-            placeholder="Systemic conditions, hypertension, diabetes, medications, allergies..."
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="np-famhistory">Family History</label>
-          <textarea
-            className="textarea"
-            id="np-famhistory"
-            name="familyHistory"
-            rows={2}
-            defaultValue={kept.familyHistory ?? ""}
-            key={"fh" + (kept.familyHistory ?? "")}
-            placeholder="Family medical conditions, hereditary dental conditions..."
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="np-dentalhistory">Past Dental History</label>
-          <textarea
-            className="textarea"
-            id="np-dentalhistory"
-            name="pastDentalHistory"
-            rows={2}
-            defaultValue={kept.pastDentalHistory ?? ""}
-            key={"pdh" + (kept.pastDentalHistory ?? "")}
-            placeholder="Previous dental treatments, extractions, root canals, restorations, orthodontics..."
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="np-allergies">Allergies</label>
-          <textarea
-            className="textarea"
-            id="np-allergies"
-            name="allergies"
-            rows={2}
-            defaultValue={kept.allergies ?? ""}
-            key={"a" + (kept.allergies ?? "")}
-            placeholder={"Penicillin, urticarial rash\nLatex, contact dermatitis"}
-          />
-          <p className="hint">
-            One per line, as substance then reaction. These show as a blocking alert on the
-            chart and are checked before anything is prescribed.
-          </p>
-        </div>
-
-        <div className="field">
-          <label htmlFor="np-conditions">Ongoing conditions</label>
-          <textarea
-            className="textarea"
-            id="np-conditions"
-            name="conditions"
-            rows={2}
-            defaultValue={kept.conditions ?? ""}
-            key={"c" + (kept.conditions ?? "")}
-            placeholder={"Type 2 diabetes, diet controlled\nAnticoagulant therapy, apixaban"}
-          />
-          <p className="hint">One per line.</p>
-        </div>
       </div>
       <div className="modal-foot">
         <button className="btn btn-primary" type="submit" disabled={pending}>
