@@ -24,7 +24,7 @@ const csp = [
     "https://*.vercel.app",
   ].filter(Boolean).join(" "),
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://vercel.live",
-  "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://assets.vercel.com",
+  "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://assets.vercel.com https://vercel.live",
   "img-src 'self' data: blob: https://picsum.photos https://fastly.picsum.photos https://vercel.com https://vercel.live https://*.vercel-storage.com",
   "connect-src 'self' https://vercel.live wss://vercel.live https://*.pusher.com wss://*.pusher.com https://*.vercel.com",
   "frame-src 'self' https://vercel.live",

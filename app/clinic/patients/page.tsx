@@ -13,6 +13,10 @@ type Row = {
 export default async function PatientsPage() {
   await requireStaff("/clinic/patients");
 
+  // No fallback. The one removed here returned the roster with allergy_count
+  // hard-coded to 0, which clears the allergy marker beside every name on the
+  // list, and its own failure left an empty array that reads as "this practice
+  // has no patients".
   const patients = (await db()`
     SELECT p.id, p.mrn, p.name, p.dob, p.photo, p.last_visit,
            (SELECT count(*)::int FROM allergies a WHERE a.patient_id = p.id) AS allergy_count,

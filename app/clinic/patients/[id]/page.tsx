@@ -62,77 +62,96 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
   const user = await requireStaff(`/clinic/patients/${id}`);
 
   const sql = db();
+
+  // No fallback: a read that fails must not collapse into an empty result.
+  // notFound() below means "there is no such patient", and a swallowed error
+  // would make an unreachable database say exactly that about someone whose
+  // record exists.
   const found = (await sql`
     SELECT id, mrn, op_no, name, dob, phone, email, address, medical_history, family_history, past_dental_history, photo, last_visit
     FROM patients WHERE id = ${id}
   `) as unknown as Patient[];
+
   const patient = found[0];
   if (!patient) notFound();
 
-  // Recorded before anything clinical is read.
+  // Recorded before anything clinical is read. A chart that cannot be logged
+  // is a chart that must not be shown: the access record is the only evidence
+  // that this reading of the patient's notes ever happened.
   await recordChartAccess(user, patient.id, "opened a patient chart");
 
-  const allergies = (await sql`SELECT substance, reaction, severity FROM allergies WHERE patient_id = ${id}`) as unknown as Allergy[];
-  const conditions = (await sql`SELECT label FROM conditions WHERE patient_id = ${id}`) as unknown as Array<{ label: string }>;
-  const clinicians = (await sql`SELECT id, name FROM clinicians ORDER BY name`) as unknown as Array<{ id: string; name: string }>;
+  // The reads below deliberately have no fallback.
+  //
+  // An empty allergy list is not a neutral default. It renders as "no known
+  // allergies", which is a claim about the patient rather than about the
+  // database, and it is the claim the prescribing screen checks against before
+  // it will warn about a conflict. Swallowing a failure here turns a database
+  // outage into a silent green light to prescribe penicillin to someone
+  // allergic to it. The same reasoning applies to recorded conditions.
+  //
+  // If any of this cannot be read the page throws and app/error.tsx says so
+  // plainly. A chart that refuses to load is safe. A chart that loads looking
+  // complete while missing its warnings is not.
+  const allergies = (await sql`
+    SELECT substance, reaction, severity FROM allergies WHERE patient_id = ${id}
+  `) as unknown as Allergy[];
+
+  const conditions = (await sql`
+    SELECT label FROM conditions WHERE patient_id = ${id}
+  `) as unknown as Array<{ label: string }>;
+
+  const clinicians = (await sql`
+    SELECT id, name FROM clinicians ORDER BY name
+  `) as unknown as Array<{ id: string; name: string }>;
+
+  // The rest of the chart, on the same terms. Each of these fed a fallback
+  // that quietly substituted wrong values for unreadable ones: a flat 30
+  // minutes for every past appointment, a blank name in place of the clinician
+  // who saw the patient, a prescription list with the override reasons
+  // stripped out. Those are not degraded views of the record, they are a
+  // different record, and nothing on the page said so.
   const appts = (await sql`
     SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, c.name AS clinician_name
     FROM appointments a JOIN clinicians c ON c.id = a.clinician_id
-    WHERE a.patient_id = ${id} ORDER BY a.starts_at DESC LIMIT 8`) as unknown as Appt[];
+    WHERE a.patient_id = ${id} ORDER BY a.starts_at DESC LIMIT 8
+  `) as unknown as Appt[];
+
   const plans = (await sql`
     SELECT p.id, p.procedure, p.phase, p.published_at, c.name AS clinician_name
     FROM plans p JOIN clinicians c ON c.id = p.clinician_id
-    WHERE p.patient_id = ${id} ORDER BY p.created_at DESC`) as unknown as Plan[];
+    WHERE p.patient_id = ${id} ORDER BY p.created_at DESC
+  `) as unknown as Plan[];
+
   const steps = (await sql`
     SELECT s.plan_id, s.title, s.detail FROM plan_steps s
-    JOIN plans p ON p.id = s.plan_id WHERE p.patient_id = ${id} ORDER BY s.ordinal`) as unknown as Step[];
+    JOIN plans p ON p.id = s.plan_id WHERE p.patient_id = ${id} ORDER BY s.ordinal
+  `) as unknown as Step[];
+
   const addenda = (await sql`
     SELECT a.plan_id, a.body, a.created_at FROM plan_addenda a
-    JOIN plans p ON p.id = a.plan_id WHERE p.patient_id = ${id} ORDER BY a.created_at`) as unknown as Addendum[];
-  let rxs: Rx[] = [];
-  try {
-    rxs = (await sql`
-      SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
-             r.override_reason, c.name AS clinician_name
-      FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
-      WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC`) as unknown as Rx[];
-  } catch (err) {
-    console.warn("prescriptions query failed on server page render, using fallback query:", err instanceof Error ? err.message : String(err));
-    try {
-      rxs = (await sql`
-        SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
-               c.name AS clinician_name
-        FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
-        WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC`) as unknown as Rx[];
-    } catch (e2) {
-      rxs = [];
-    }
-  }
+    JOIN plans p ON p.id = a.plan_id WHERE p.patient_id = ${id} ORDER BY a.created_at
+  `) as unknown as Addendum[];
 
-  let reports: ReportItem[] = [];
-  try {
-    reports = (await sql`
-      SELECT r.id, r.kind, r.title, r.summary, r.image, r.taken_at, r.released_at, r.clinician_id, c.name AS clinician_name
-      FROM reports r LEFT JOIN clinicians c ON c.id = r.clinician_id
-      WHERE r.patient_id = ${id} ORDER BY r.taken_at DESC`) as unknown as ReportItem[];
-  } catch (err) {
-    try {
-      reports = (await sql`
-        SELECT id, kind, title, summary, image, taken_at, released_at, clinician_id FROM reports
-        WHERE patient_id = ${id} ORDER BY taken_at DESC`) as unknown as ReportItem[];
-    } catch (e2) {
-      reports = [];
-    }
-  }
+  const rxs = (await sql`
+    SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
+           r.override_reason, c.name AS clinician_name
+    FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
+    WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC
+  `) as unknown as Rx[];
 
-  let savedChartRows: Array<{ tooth_num: number; condition: string; notes: string | null }> = [];
-  try {
-    savedChartRows = (await sql`
-      SELECT tooth_num, condition, notes FROM dental_chart WHERE patient_id = ${id}
-    `) as Array<{ tooth_num: number; condition: string; notes: string | null }>;
-  } catch (err) {
-    console.warn("dental_chart query failed on server page render, using default chart:", err instanceof Error ? err.message : String(err));
-  }
+  const reports = (await sql`
+    SELECT r.id, r.kind, r.title, r.summary, r.image, r.taken_at, r.released_at, r.clinician_id, c.name AS clinician_name
+    FROM reports r LEFT JOIN clinicians c ON c.id = r.clinician_id
+    WHERE r.patient_id = ${id} ORDER BY r.taken_at DESC
+  `) as unknown as ReportItem[];
+
+  // An empty odontogram draws all 32 teeth as sound. Falling back to it on a
+  // read failure would assert a clean mouth for a patient whose charted decay
+  // simply could not be loaded, and would then let a clinician chart on top of
+  // that blank.
+  const savedChartRows = (await sql`
+    SELECT tooth_num, condition, notes FROM dental_chart WHERE patient_id = ${id}
+  `) as Array<{ tooth_num: number; condition: string; notes: string | null }>;
 
   const overviewSection = (
     <div key="sec-overview">

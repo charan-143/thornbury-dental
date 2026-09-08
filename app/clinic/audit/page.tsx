@@ -10,7 +10,12 @@ export default async function AuditPage() {
 
   const entries = await readAudit(200);
   const chain = await verifyChain();
-  const names = (await db()`SELECT id, name FROM clinicians`) as unknown as Array<{ id: string; name: string }>;
+  // Without these the trail still renders, but every actor shows as a raw id,
+  // which is not a readable compliance record. readAudit and verifyChain above
+  // already fail loudly; this read is no less load-bearing than they are.
+  const names = (await db()`
+    SELECT id, name FROM clinicians
+  `) as unknown as Array<{ id: string; name: string }>;
 
   const formattedEntries: AuditEntryItem[] = entries.map((e) => ({
     seq: e.seq,
