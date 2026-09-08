@@ -265,6 +265,31 @@ async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
   try { await client`ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS refills INTEGER NOT NULL DEFAULT 0;`; } catch (e) {}
   try { await client`ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS override_reason TEXT;`; } catch (e) {}
 
+  try { await client`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS duration_min INTEGER NOT NULL DEFAULT 30;`; } catch (e) {}
+  try { await client`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS room TEXT NOT NULL DEFAULT '';`; } catch (e) {}
+  try { await client`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'General';`; } catch (e) {}
+  try { await client`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'confirmed';`; } catch (e) {}
+
+  try {
+    await client.query(`
+      DO $$ 
+      BEGIN 
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='appointments' AND column_name='duration') 
+           AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='appointments' AND column_name='duration_min') THEN
+          UPDATE appointments SET duration_min = duration WHERE duration_min IS NULL OR duration_min = 30;
+        END IF;
+      END $$;
+    `);
+  } catch (e) {}
+
+  try { await client`ALTER TABLE clinicians ADD COLUMN IF NOT EXISTS room TEXT NOT NULL DEFAULT '';`; } catch (e) {}
+  try { await client`ALTER TABLE clinicians ADD COLUMN IF NOT EXISTS photo TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE clinicians ADD COLUMN IF NOT EXISTS bio TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE clinicians ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;`; } catch (e) {}
+
+  try { await client`ALTER TABLE reports ADD COLUMN IF NOT EXISTS image TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE reports ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ;`; } catch (e) {}
+
   try {
     await client`
       CREATE TABLE IF NOT EXISTS dental_chart (
