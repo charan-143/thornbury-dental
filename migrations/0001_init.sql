@@ -97,15 +97,21 @@ CREATE TABLE IF NOT EXISTS auth_throttle (
 -- --------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS patients (
-  id         TEXT PRIMARY KEY,
-  mrn        TEXT NOT NULL UNIQUE,
-  name       TEXT NOT NULL,
-  dob        DATE NOT NULL,
-  phone      TEXT,
-  email      TEXT,
-  photo      TEXT,
-  last_visit DATE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  TEXT PRIMARY KEY,
+  mrn                 TEXT NOT NULL UNIQUE,
+  op_no               TEXT,
+  name                TEXT NOT NULL,
+  dob                 DATE NOT NULL,
+  phone               TEXT,
+  email               TEXT,
+  address             TEXT,
+  medical_history     TEXT,
+  family_history      TEXT,
+  past_dental_history TEXT,
+  photo               TEXT,
+  last_visit          DATE,
+  primary_clinician_id TEXT REFERENCES clinicians(id),
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(lower(name));
 
@@ -124,6 +130,17 @@ CREATE TABLE IF NOT EXISTS conditions (
   label      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_conditions_patient ON conditions(patient_id);
+
+CREATE TABLE IF NOT EXISTS dental_chart (
+  id         TEXT PRIMARY KEY,
+  patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  tooth_num  INTEGER NOT NULL CHECK (tooth_num >= 1 AND tooth_num <= 32),
+  condition  TEXT NOT NULL DEFAULT 'sound',
+  notes      TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(patient_id, tooth_num)
+);
+CREATE INDEX IF NOT EXISTS idx_dental_chart_patient ON dental_chart(patient_id);
 
 CREATE TABLE IF NOT EXISTS appointments (
   id           TEXT PRIMARY KEY,

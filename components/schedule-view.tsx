@@ -211,7 +211,7 @@ export function ScheduleView({
 
                     <div className="chip-row" style={{ marginTop: 8 }}>
                       {r.status === "confirmed" && (
-                        <>
+                        <div key={`actions-${r.id}`} style={{ display: "inline-flex", gap: 6 }}>
                           <form action={setAppointmentStatusAction} style={{ display: "inline" }}>
                             <input type="hidden" name="id" value={r.id} />
                             <input type="hidden" name="status" value="completed" />
@@ -228,7 +228,7 @@ export function ScheduleView({
                               Cancel
                             </button>
                           </form>
-                        </>
+                        </div>
                       )}
                       {r.status === "completed" && (
                         <span className="badge badge-info">

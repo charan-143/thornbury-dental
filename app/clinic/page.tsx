@@ -45,36 +45,43 @@ export default async function ClinicToday() {
   const today = isoDate();
   const { startIso, endIso } = dayBounds(today);
 
-  // string_agg rather than a join, so a patient with two allergies does not
-  // duplicate their appointment row.
-  const list = (await sql`
-    SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
-           p.id AS patient_id, p.name AS patient_name, p.mrn, p.dob,
-           (SELECT string_agg(al.substance, ', ') FROM allergies al WHERE al.patient_id = p.id) AS allergy_list
-    FROM appointments a
-    JOIN patients p ON p.id = a.patient_id
-    WHERE a.clinician_id = ${user.clinicianId}
-      AND a.starts_at >= ${startIso}
-      AND a.starts_at < ${endIso}
-    ORDER BY a.starts_at ASC
-  `) as unknown as Row[];
+  // This list is the working day. Its previous fallback was worse than no
+  // list at all: it dropped the two date bounds, so a failure of the real
+  // query turned "today" into every appointment this clinician has ever had,
+  // stamped each one with a flat 30 minutes and a blank room, and discarded
+  // the allergy summary the chip beside each name is drawn from. Nothing on
+  // the page said any of that had happened.
+  // Run all dashboard queries in parallel to eliminate waterfalls and load immediately
+  const [list, drafts, held, chain] = await Promise.all([
+    sql`
+      SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
+             p.id AS patient_id, p.name AS patient_name, p.mrn, p.dob,
+             (SELECT string_agg(al.substance, ', ') FROM allergies al WHERE al.patient_id = p.id) AS allergy_list
+      FROM appointments a
+      JOIN patients p ON p.id = a.patient_id
+      WHERE a.clinician_id = ${user.clinicianId}
+        AND a.starts_at >= ${startIso}
+        AND a.starts_at < ${endIso}
+      ORDER BY a.starts_at ASC
+    ` as unknown as Promise<Row[]>,
+
+    sql`
+      SELECT p.id, p.procedure, p.phase, pt.name AS patient_name, pt.id AS patient_id
+      FROM plans p JOIN patients pt ON pt.id = p.patient_id
+      WHERE p.clinician_id = ${user.clinicianId} AND p.published_at IS NULL
+    ` as unknown as Promise<Draft[]>,
+
+    sql`
+      SELECT r.id, r.title, r.kind, pt.name AS patient_name, pt.id AS patient_id
+      FROM reports r JOIN patients pt ON pt.id = r.patient_id
+      WHERE r.clinician_id = ${user.clinicianId} AND r.released_at IS NULL
+    ` as unknown as Promise<Held[]>,
+
+    verifyChain(),
+  ]);
 
   const active = list.filter((row) => row.status === "confirmed");
-  const minutes = active.reduce((total, row) => total + row.duration_min, 0);
-
-  const drafts = (await sql`
-    SELECT p.id, p.procedure, p.phase, pt.name AS patient_name, pt.id AS patient_id
-    FROM plans p JOIN patients pt ON pt.id = p.patient_id
-    WHERE p.clinician_id = ${user.clinicianId} AND p.published_at IS NULL
-  `) as unknown as Draft[];
-
-  const held = (await sql`
-    SELECT r.id, r.title, r.kind, pt.name AS patient_name, pt.id AS patient_id
-    FROM reports r JOIN patients pt ON pt.id = r.patient_id
-    WHERE r.clinician_id = ${user.clinicianId} AND r.released_at IS NULL
-  `) as unknown as Held[];
-
-  const chain = await verifyChain();
+  const minutes = active.reduce((total, row) => total + (row.duration_min || 30), 0);
 
   return (
     <>

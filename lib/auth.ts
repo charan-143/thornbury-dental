@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
+import { cache } from "react";
 import { db, newId, nowIso, sha256 } from "./db";
 import { record } from "./audit";
 import { burnTime, hashPassword, verifyPassword, passwordIssues } from "./password";
@@ -54,6 +55,8 @@ export type SessionUser = {
   clinicianId: string;
   email: string;
   name: string;
+  room: string;
+  photo: string | null;
 };
 
 const normalise = (email: string) => String(email ?? "").trim().toLowerCase();
@@ -69,22 +72,38 @@ const normalise = (email: string) => String(email ?? "").trim().toLowerCase();
  */
 async function throttled(key: string): Promise<boolean> {
   const sql = db();
-  const rows = (await sql`
-    SELECT hits, window_at FROM auth_throttle WHERE key = ${key}
-  `) as Array<{ hits: number; window_at: Date }>;
-  const row = rows[0];
+  try {
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS auth_throttle (
+          key       TEXT PRIMARY KEY,
+          hits      INTEGER NOT NULL DEFAULT 0,
+          window_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `;
+    } catch (e) {}
 
-  if (!row || Date.now() - new Date(row.window_at).getTime() > THROTTLE_WINDOW_MS) {
-    await sql`
-      INSERT INTO auth_throttle (key, hits, window_at) VALUES (${key}, 1, now())
-      ON CONFLICT (key) DO UPDATE SET hits = 1, window_at = now()
-    `;
+    const rows = (await sql`
+      SELECT hits, window_at FROM auth_throttle WHERE key = ${key}
+    `) as Array<{ hits: number; window_at: Date }>;
+    const row = rows[0];
+
+    if (!row || Date.now() - new Date(row.window_at).getTime() > THROTTLE_WINDOW_MS) {
+      await sql`
+        INSERT INTO auth_throttle (key, hits, window_at) VALUES (${key}, 1, now())
+        ON CONFLICT (key) DO UPDATE SET hits = 1, window_at = now()
+      `;
+      return false;
+    }
+
+    if (row.hits >= THROTTLE_LIMIT) return true;
+    await sql`UPDATE auth_throttle SET hits = hits + 1 WHERE key = ${key}`;
+    return false;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn("auth_throttle notice (throttling bypassed on DB error):", msg);
     return false;
   }
-
-  if (row.hits >= THROTTLE_LIMIT) return true;
-  await sql`UPDATE auth_throttle SET hits = hits + 1 WHERE key = ${key}`;
-  return false;
 }
 
 /** Digest of the client address, so the throttle table holds no raw addresses. */
@@ -153,8 +172,11 @@ async function issueSession(account: Account): Promise<void> {
  * Resolves the caller from the session cookie, enforcing both expiry limits on
  * every request. Returns null rather than throwing, so callers choose between
  * redirecting and refusing.
+ *
+ * Wrapped in React.cache() so layout and page components share a single
+ * session resolution without duplicate database round-trips.
  */
-export async function currentUser(): Promise<SessionUser | null> {
+export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -163,7 +185,7 @@ export async function currentUser(): Promise<SessionUser | null> {
   const rows = (await sql`
     SELECT s.id AS session_id, s.expires_at, s.last_seen_at, s.revoked_at,
            a.id AS account_id, a.role, a.clinician_id, a.email, a.disabled_at,
-           c.name AS name
+           c.name AS name, COALESCE(c.room, '') AS room, c.photo AS photo
     FROM sessions s
     JOIN accounts a ON a.id = s.account_id
     JOIN clinicians c ON c.id = a.clinician_id
@@ -179,6 +201,8 @@ export async function currentUser(): Promise<SessionUser | null> {
     email: string;
     disabled_at: Date | null;
     name: string;
+    room: string;
+    photo: string | null;
   }>;
 
   const row = rows[0];
@@ -213,23 +237,32 @@ export async function currentUser(): Promise<SessionUser | null> {
     clinicianId: row.clinician_id,
     email: row.email,
     name: row.name,
+    room: row.room ?? "",
+    photo: row.photo ?? null,
   };
-}
+});
 
 export async function signOut(): Promise<void> {
-  const user = await currentUser();
-  if (user) {
-    await db()`UPDATE sessions SET revoked_at = now() WHERE id = ${user.sessionId}`;
-    await record({
-      actorId: user.clinicianId,
-      actorRole: user.role,
-      action: "signed out",
-      entity: "session",
-      entityId: user.sessionId,
-    });
+  try {
+    const user = await currentUser();
+    if (user) {
+      await db()`UPDATE sessions SET revoked_at = now() WHERE id = ${user.sessionId}`;
+      await record({
+        actorId: user.clinicianId,
+        actorRole: user.role,
+        action: "signed out",
+        entity: "session",
+        entityId: user.sessionId,
+      });
+    }
+  } catch (err) {
+    console.warn("signOut database notice:", err instanceof Error ? err.message : String(err));
+  } finally {
+    try {
+      const jar = await cookies();
+      jar.delete(SESSION_COOKIE);
+    } catch (e) {}
   }
-  const jar = await cookies();
-  jar.delete(SESSION_COOKIE);
 }
 
 /** Ends every session for an account, used after a password change or reset. */

@@ -21,9 +21,12 @@ function ErrorAlert({ message }: { message?: string }) {
 /**
  * Registering a patient.
  *
- * Allergies are one per line rather than a comma-separated field, because
- * "Penicillin, rash" is two facts and a single box invites people to run them
- * together. The record number is not asked for: it is generated.
+ * Identity and contact details only. The clinical history that used to be
+ * collected here — medical, family and past dental history, allergies and
+ * ongoing conditions — was removed at the practice's request; the three
+ * history fields are still editable from the chart, and conditions are
+ * recorded during examination. The record number is not asked for: it is
+ * generated.
  */
 export function NewPatientForm() {
   const [state, action, pending] = useActionState<ClinicalFormState, FormData>(createPatientAction, {});
@@ -37,9 +40,15 @@ export function NewPatientForm() {
       <div className="panel-body">
         <ErrorAlert message={state.error} />
 
-        <div className="field">
-          <label htmlFor="np-name">Full name <span className="req" aria-hidden="true">*</span></label>
-          <input className="input" id="np-name" name="name" autoComplete="off" required defaultValue={kept.name ?? ""} key={"n" + (kept.name ?? "")} />
+        <div className="cols-2" style={{ gap: 16 }}>
+          <div className="field">
+            <label htmlFor="np-name">Full name <span className="req" aria-hidden="true">*</span></label>
+            <input className="input" id="np-name" name="name" autoComplete="off" required defaultValue={kept.name ?? ""} key={"n" + (kept.name ?? "")} />
+          </div>
+          <div className="field">
+            <label htmlFor="np-opno">OP No. (Outpatient Number)</label>
+            <input className="input" id="np-opno" name="opNo" placeholder="Auto-generated if blank (e.g. OP-40001)" defaultValue={kept.opNo ?? ""} key={"op" + (kept.opNo ?? "")} />
+          </div>
         </div>
 
         <div className="cols-2" style={{ gap: 16 }}>
@@ -48,7 +57,7 @@ export function NewPatientForm() {
             <input className="input" id="np-dob" name="dob" type="date" required defaultValue={kept.dob ?? ""} key={"d" + (kept.dob ?? "")} />
           </div>
           <div className="field">
-            <label htmlFor="np-phone">Telephone</label>
+            <label htmlFor="np-phone">Phone No.</label>
             <input className="input" id="np-phone" name="phone" type="tel" autoComplete="off" defaultValue={kept.phone ?? ""} key={"p" + (kept.phone ?? "")} />
           </div>
         </div>
@@ -60,35 +69,10 @@ export function NewPatientForm() {
         </div>
 
         <div className="field">
-          <label htmlFor="np-allergies">Allergies</label>
-          <textarea
-            className="textarea"
-            id="np-allergies"
-            name="allergies"
-            rows={3}
-            defaultValue={kept.allergies ?? ""}
-            key={"a" + (kept.allergies ?? "")}
-            placeholder={"Penicillin, urticarial rash\nLatex, contact dermatitis"}
-          />
-          <p className="hint">
-            One per line, as substance then reaction. These show as a blocking alert on the
-            chart and are checked before anything is prescribed.
-          </p>
+          <label htmlFor="np-address">Address</label>
+          <input className="input" id="np-address" name="address" placeholder="Full postal address..." defaultValue={kept.address ?? ""} key={"addr" + (kept.address ?? "")} />
         </div>
 
-        <div className="field">
-          <label htmlFor="np-conditions">Ongoing conditions</label>
-          <textarea
-            className="textarea"
-            id="np-conditions"
-            name="conditions"
-            rows={3}
-            defaultValue={kept.conditions ?? ""}
-            key={"c" + (kept.conditions ?? "")}
-            placeholder={"Type 2 diabetes, diet controlled\nAnticoagulant therapy, apixaban"}
-          />
-          <p className="hint">One per line.</p>
-        </div>
       </div>
       <div className="modal-foot">
         <button className="btn btn-primary" type="submit" disabled={pending}>

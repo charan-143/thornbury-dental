@@ -16,6 +16,7 @@ export type AuditEntryItem = {
 interface AuditFilterViewProps {
   entries: AuditEntryItem[];
   clinicians: Array<{ id: string; name: string }>;
+  isAdmin?: boolean;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -26,7 +27,7 @@ function stamp(value: Date | string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function AuditFilterView({ entries, clinicians }: AuditFilterViewProps) {
+export function AuditFilterView({ entries, clinicians, isAdmin = false }: AuditFilterViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedActor, setSelectedActor] = useState<string>("all");
   const [selectedOutcome, setSelectedOutcome] = useState<string>("all");
@@ -129,23 +130,31 @@ export function AuditFilterView({ entries, clinicians }: AuditFilterViewProps) {
         </div>
 
         <div className="audit-filters-row">
-          <div className="filter-select-wrapper">
-            <label htmlFor="actor-filter">Actor:</label>
-            <select
-              id="actor-filter"
-              value={selectedActor}
-              onChange={(e) => setSelectedActor(e.target.value)}
-              className="select select-sm"
-            >
-              <option value="all">All Clinicians & System</option>
-              <option value="system">System Only</option>
-              {clinicians.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {isAdmin ? (
+            <div className="filter-select-wrapper">
+              <label htmlFor="actor-filter">Actor:</label>
+              <select
+                id="actor-filter"
+                value={selectedActor}
+                onChange={(e) => setSelectedActor(e.target.value)}
+                className="select select-sm"
+              >
+                <option value="all">All Clinicians & System</option>
+                <option value="system">System Only</option>
+                {clinicians.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="filter-select-wrapper" style={{ display: "flex", alignItems: "center" }}>
+              <span className="badge" style={{ padding: "6px 12px" }}>
+                <i className="ph ph-user-check" aria-hidden="true" /> Your personal activity log
+              </span>
+            </div>
+          )}
 
           <div className="filter-select-wrapper">
             <label htmlFor="category-filter">Action:</label>

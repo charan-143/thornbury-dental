@@ -14,6 +14,15 @@
         "value": "inter",
         "createdAt": "2026-09-06T19:29:31.271Z",
         "reason": "DESIGN.md (the getdesign claude system) specifies the sans stack as StyreneB, Inter, sans-serif. StyreneB is a commercial Anthropic face and is not available, so Inter is the documented fallback rather than a default reached for. Pairs with the existing Newsreader ignore for Copernicus/Tiempos Headline."
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "app/globals.css"
+        ],
+        "createdAt": "2026-09-08T10:05:15.844Z",
+        "reason": "Claude decided: the only match is .tooth-part-transition animating stroke-width on SVG tooth paths (globals.css L1480). stroke-width is an SVG paint property, not box layout - it triggers no document reflow, and the rule's named properties (width/height/padding/margin) do not appear in the declaration. There is no transform or opacity equivalent for stroke thickness, so the suggested alternative cannot express this hover affordance."
       }
     ]
   }

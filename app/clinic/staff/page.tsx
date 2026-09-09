@@ -15,6 +15,11 @@ export default async function StaffPage() {
   await requireAdmin("/clinic/staff");
   const sql = db();
 
+  // No fallback on either read. This page is how an administrator sees who can
+  // get into the system and who holds a live session; an empty list here reads
+  // as "nobody has access" and "there are no invitations outstanding", which is
+  // precisely the wrong thing to believe while deciding whether to revoke
+  // something.
   const accounts = (await sql`
     SELECT a.id, a.email, a.role, c.name, c.specialty,
            a.created_at, a.last_sign_in_at, a.locked_until, a.disabled_at,

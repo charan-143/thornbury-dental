@@ -25,21 +25,11 @@ type ClinicianRow = { id: string; name: string; room: string; photo: string | nu
 export default async function ClinicLayout({ children }: { children: React.ReactNode }) {
   const user = await requireStaff("/clinic");
 
-  const rows = (await db()`
-    SELECT id, name, room, photo FROM clinicians WHERE id = ${user.clinicianId}
-  `) as unknown as ClinicianRow[];
-  const clinician = rows[0];
-
-  if (!clinician) {
-    return (
-      <main className="wrap" id="main" style={{ paddingBlock: 64 }}>
-        <h1>Profile unavailable</h1>
-        <p className="meta" style={{ marginTop: 12 }}>
-          This account is not linked to a clinician profile. Contact the practice administrator.
-        </p>
-      </main>
-    );
-  }
+  const clinician = {
+    name: user.name,
+    room: user.room,
+    photo: user.photo,
+  };
 
   return (
     <div className="app">
@@ -54,13 +44,13 @@ export default async function ClinicLayout({ children }: { children: React.React
 
         <nav className="side-nav" aria-label="Workspace sections">
           {SECTIONS.map(([slug, glyph, label]) => (
-            <Link key={label} href={`/clinic/${slug}`}>
+            <Link key={label} href={slug ? `/clinic/${slug}` : "/clinic"} prefetch={true}>
               <i className={`ph ph-${glyph}`} aria-hidden="true" />
               <span>{label}</span>
             </Link>
           ))}
           {isAdmin(user) && (
-            <Link href="/clinic/staff">
+            <Link href="/clinic/staff" prefetch={true}>
               <i className="ph ph-identification-badge" aria-hidden="true" />
               <span>Staff</span>
             </Link>
