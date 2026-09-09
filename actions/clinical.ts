@@ -269,7 +269,7 @@ export async function getToothChartAction(
  * Creates a treatment plan for a patient with bullet point steps ("Advice to ...").
  */
 export async function createTreatmentPlanAction(
-  _prev: ClinicalFormState,
+  _prev: ClinicalFormState | null | undefined,
   formData: FormData,
 ): Promise<ClinicalFormState> {
   const patientId = trimmed(formData, "patientId");
@@ -291,9 +291,19 @@ export async function createTreatmentPlanAction(
   const nowStr = new Date().toISOString();
 
   try {
+    let clinicianId = user.clinicianId;
+    if (clinicianId) {
+      const [existing] = await sql`SELECT id FROM clinicians WHERE id = ${clinicianId} LIMIT 1`;
+      if (!existing) clinicianId = "";
+    }
+    if (!clinicianId) {
+      const [firstClinician] = await sql`SELECT id FROM clinicians WHERE active = true ORDER BY id LIMIT 1`;
+      clinicianId = firstClinician?.id || "cl_01";
+    }
+
     await sql`
       INSERT INTO plans (id, patient_id, clinician_id, procedure, phase, published_at, locked_at)
-      VALUES (${planId}, ${patientId}, ${user.clinicianId}, ${procedure}, ${phase}, ${nowStr}, ${nowStr})
+      VALUES (${planId}, ${patientId}, ${clinicianId}, ${procedure}, ${phase}, ${nowStr}, ${nowStr})
     `;
 
     // Process bullet point advice steps line by line
@@ -316,7 +326,7 @@ export async function createTreatmentPlanAction(
     }
 
     await record({
-      actorId: user.clinicianId,
+      actorId: clinicianId,
       actorRole: user.role,
       action: `created treatment plan: ${procedure}`,
       entity: "plan",
@@ -325,11 +335,11 @@ export async function createTreatmentPlanAction(
     });
 
     revalidatePath(`/clinic/patients/${patientId}`);
-    return {};
+    return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     console.error("treatment plan creation failed:", message || "unknown");
-    return { error: "Could not create treatment plan. Try again.", values };
+    return { error: message ? `Could not create treatment plan: ${message}` : "Could not create treatment plan. Try again.", values };
   }
 }
 
@@ -337,7 +347,7 @@ export async function createTreatmentPlanAction(
  * Updates an existing treatment plan and its "Advice to" bullet point steps.
  */
 export async function updateTreatmentPlanAction(
-  _prev: ClinicalFormState,
+  _prev: ClinicalFormState | null | undefined,
   formData: FormData,
 ): Promise<ClinicalFormState> {
   const planId = trimmed(formData, "planId");
@@ -360,7 +370,7 @@ export async function updateTreatmentPlanAction(
   try {
     await sql`
       UPDATE plans
-      SET procedure = ${procedure}, phase = ${phase}
+      SET procedure = ${procedure}
       WHERE id = ${planId} AND patient_id = ${patientId}
     `;
 
@@ -385,7 +395,7 @@ export async function updateTreatmentPlanAction(
     }
 
     await record({
-      actorId: user.clinicianId,
+      actorId: user.clinicianId || "cl_01",
       actorRole: user.role,
       action: `updated treatment plan: ${procedure}`,
       entity: "plan",
@@ -394,11 +404,11 @@ export async function updateTreatmentPlanAction(
     });
 
     revalidatePath(`/clinic/patients/${patientId}`);
-    return {};
+    return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     console.error("treatment plan update failed:", message || "unknown");
-    return { error: "Could not update treatment plan. Try again.", values };
+    return { error: message ? `Could not update treatment plan: ${message}` : "Could not update treatment plan. Try again.", values };
   }
 }
 
@@ -406,7 +416,7 @@ export async function updateTreatmentPlanAction(
  * Updates patient clinical diagnosis / conditions in bullet point lines.
  */
 export async function updatePatientDiagnosisAction(
-  _prev: ClinicalFormState,
+  _prev: ClinicalFormState | null | undefined,
   formData: FormData,
 ): Promise<ClinicalFormState> {
   const patientId = trimmed(formData, "patientId");
@@ -420,6 +430,8 @@ export async function updatePatientDiagnosisAction(
   const pocketTeeth = trimmed(formData, "pocketTeeth");
   const recession = trimmed(formData, "recession");
   const recessionTeeth = trimmed(formData, "recessionTeeth");
+  const tmj = trimmed(formData, "tmj");
+  const tmjNotes = trimmed(formData, "tmjNotes");
   const otherConditions = trimmed(formData, "otherConditions");
 
   const sql = db();
@@ -449,6 +461,10 @@ export async function updatePatientDiagnosisAction(
         newConditions.push(`Recession: ${recession}`);
       }
     }
+    if (tmj) {
+      const label = tmjNotes ? `TMJ: ${tmj} (${tmjNotes})` : `TMJ: ${tmj}`;
+      newConditions.push(label);
+    }
 
     if (otherConditions) {
       const lines = otherConditions
@@ -466,7 +482,7 @@ export async function updatePatientDiagnosisAction(
     }
 
     await record({
-      actorId: user.clinicianId,
+      actorId: user.clinicianId || "cl_01",
       actorRole: user.role,
       action: "updated patient diagnosis / conditions",
       entity: "patient",
@@ -475,7 +491,7 @@ export async function updatePatientDiagnosisAction(
     });
 
     revalidatePath(`/clinic/patients/${patientId}`);
-    return {};
+    return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     console.error("diagnosis update failed:", message || "unknown");
@@ -484,10 +500,63 @@ export async function updatePatientDiagnosisAction(
 }
 
 /**
- * Updates a single diagnosis element (stains, calculus, pockets, recession, or other conditions) separately.
+ * Updates patient clinical diagnosis via a single editable textbox.
+ */
+export async function updateDiagnosisTextAction(
+  _prev: ClinicalFormState | null | undefined,
+  formData: FormData,
+): Promise<ClinicalFormState> {
+  const patientId = trimmed(formData, "patientId");
+  const user = await requireStaff(`/clinic/patients/${patientId}`);
+
+  if (!patientId) return { error: "Missing patient identifier." };
+
+  const diagnosisText = trimmed(formData, "diagnosis");
+  const sql = db();
+
+  try {
+    try {
+      await sql`ALTER TABLE patients ADD COLUMN IF NOT EXISTS diagnosis TEXT;`;
+      await sql`UPDATE patients SET diagnosis = ${diagnosisText} WHERE id = ${patientId}`;
+    } catch (e) {}
+
+    await sql`DELETE FROM conditions WHERE patient_id = ${patientId}`;
+
+    const lines = diagnosisText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    for (const line of lines) {
+      await sql`
+        INSERT INTO conditions (id, patient_id, label)
+        VALUES (${newId("cn")}, ${patientId}, ${line})
+      `;
+    }
+
+    await record({
+      actorId: user.clinicianId || "cl_01",
+      actorRole: user.role,
+      action: "updated patient diagnosis",
+      entity: "patient",
+      entityId: patientId,
+      patientId,
+    });
+
+    revalidatePath(`/clinic/patients/${patientId}`);
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    console.error("diagnosis text update failed:", message || "unknown");
+    return { error: "Could not update diagnosis. Try again." };
+  }
+}
+
+/**
+ * Updates a single diagnosis element (stains, calculus, pockets, recession, tmj, or other conditions) separately.
  */
 export async function updateSpecificDiagnosisElementAction(
-  _prev: ClinicalFormState,
+  _prev: ClinicalFormState | null | undefined,
   formData: FormData,
 ): Promise<ClinicalFormState> {
   const patientId = trimmed(formData, "patientId");
@@ -531,12 +600,6 @@ export async function updateSpecificDiagnosisElementAction(
           : `Recession: ${recession}`;
         await sql`INSERT INTO conditions (id, patient_id, label) VALUES (${newId("cn")}, ${patientId}, ${label})`;
       }
-    } else if (element === "gingival") {
-      const gingival = trimmed(formData, "gingival");
-      await sql`DELETE FROM conditions WHERE patient_id = ${patientId} AND (label LIKE 'Gingival:%' OR label LIKE 'Gingivitis%')`;
-      if (gingival) {
-        await sql`INSERT INTO conditions (id, patient_id, label) VALUES (${newId("cn")}, ${patientId}, ${`Gingival: ${gingival}`})`;
-      }
     } else if (element === "tmj") {
       const tmj = trimmed(formData, "tmj");
       const tmjNotes = trimmed(formData, "tmjNotes");
@@ -554,8 +617,6 @@ export async function updateSpecificDiagnosisElementAction(
           AND label NOT LIKE 'Calculus:%'
           AND label NOT LIKE 'Pockets:%'
           AND label NOT LIKE 'Recession:%'
-          AND label NOT LIKE 'Gingival:%'
-          AND label NOT LIKE 'Gingivitis%'
           AND label NOT LIKE 'TMJ:%'
       `;
       if (otherConditions) {
@@ -570,7 +631,7 @@ export async function updateSpecificDiagnosisElementAction(
     }
 
     await record({
-      actorId: user.clinicianId,
+      actorId: user.clinicianId || "cl_01",
       actorRole: user.role,
       action: `updated diagnosis element: ${element}`,
       entity: "patient",
@@ -579,7 +640,7 @@ export async function updateSpecificDiagnosisElementAction(
     });
 
     revalidatePath(`/clinic/patients/${patientId}`);
-    return {};
+    return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     console.error("diagnosis element update failed:", message || "unknown");

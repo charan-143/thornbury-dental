@@ -31,6 +31,7 @@ interface ReportsAndImagingViewProps {
   patientName: string;
   reports: ReportItem[];
   clinicians: ClinicianItem[];
+  currentClinicianId?: string | null;
 }
 
 const KINDS = [
@@ -56,6 +57,7 @@ export function ReportsAndImagingView({
   patientName,
   reports,
   clinicians,
+  currentClinicianId,
 }: ReportsAndImagingViewProps) {
   const [isPending, startTransition] = useTransition();
 
@@ -1021,10 +1023,15 @@ export function ReportsAndImagingView({
 
                   <div className="field">
                     <label htmlFor="rep-clinician">Attending Clinician</label>
-                    <select id="rep-clinician" name="clinicianId" className="select">
+                    <select
+                      id="rep-clinician"
+                      name="clinicianId"
+                      className="select"
+                      defaultValue={currentClinicianId || (clinicians[0]?.id ?? "")}
+                    >
                       {clinicians.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name}
+                          {c.name} {c.id === currentClinicianId ? "(You)" : ""}
                         </option>
                       ))}
                     </select>
@@ -1227,11 +1234,11 @@ export function ReportsAndImagingView({
                       id="edit-clinician"
                       name="clinicianId"
                       className="select"
-                      defaultValue={editingReport.clinician_id || ""}
+                      defaultValue={editingReport.clinician_id || currentClinicianId || ""}
                     >
                       {clinicians.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name}
+                          {c.name} {c.id === currentClinicianId ? "(You)" : ""}
                         </option>
                       ))}
                     </select>
