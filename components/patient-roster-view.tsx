@@ -132,7 +132,7 @@ export function PatientRosterView({ patients }: PatientRosterViewProps) {
         {filteredPatients.length ? (
           <div className="roster">
             {filteredPatients.map((p) => (
-              <Link className="roster-row" key={p.id} href={`/clinic/patients/${p.id}`}>
+              <Link className="roster-row" key={p.id} href={`/clinic/patients/${p.id}`} prefetch={true}>
                 {p.photo ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={p.photo} alt="" width={40} height={40} />

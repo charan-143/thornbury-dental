@@ -75,6 +75,25 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
   const patient = found[0];
   if (!patient) notFound();
 
+  // If not admin, restrict chart access to only clinicians who treat this patient
+  if (user.role !== "admin") {
+    const accessCheck = (await sql`
+      SELECT 1 FROM patients p
+      WHERE p.id = ${id}
+        AND (
+          p.primary_clinician_id = ${user.clinicianId}
+          OR EXISTS (SELECT 1 FROM appointments a WHERE a.patient_id = p.id AND a.clinician_id = ${user.clinicianId})
+          OR EXISTS (SELECT 1 FROM plans pl WHERE pl.patient_id = p.id AND pl.clinician_id = ${user.clinicianId})
+          OR EXISTS (SELECT 1 FROM prescriptions pr WHERE pr.patient_id = p.id AND pr.clinician_id = ${user.clinicianId})
+          OR EXISTS (SELECT 1 FROM reports rp WHERE rp.patient_id = p.id AND rp.clinician_id = ${user.clinicianId})
+        )
+    `) as unknown as Array<{ "?column?": number }>;
+
+    if (!accessCheck || accessCheck.length === 0) {
+      notFound();
+    }
+  }
+
   // Recorded before anything clinical is read. A chart that cannot be logged
   // is a chart that must not be shown: the access record is the only evidence
   // that this reading of the patient's notes ever happened.
@@ -92,66 +111,72 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
   // If any of this cannot be read the page throws and app/error.tsx says so
   // plainly. A chart that refuses to load is safe. A chart that loads looking
   // complete while missing its warnings is not.
-  const allergies = (await sql`
-    SELECT substance, reaction, severity FROM allergies WHERE patient_id = ${id}
-  `) as unknown as Allergy[];
+  //
+  // All independent database queries are executed in parallel via Promise.all()
+  // to eliminate the async network waterfall and minimize TTFB.
+  const [
+    allergies,
+    conditions,
+    clinicians,
+    appts,
+    plans,
+    steps,
+    addenda,
+    rxs,
+    reports,
+    savedChartRows,
+  ] = await Promise.all([
+    sql`
+      SELECT substance, reaction, severity FROM allergies WHERE patient_id = ${id}
+    ` as unknown as Promise<Allergy[]>,
 
-  const conditions = (await sql`
-    SELECT label FROM conditions WHERE patient_id = ${id}
-  `) as unknown as Array<{ label: string }>;
+    sql`
+      SELECT label FROM conditions WHERE patient_id = ${id}
+    ` as unknown as Promise<Array<{ label: string }>>,
 
-  const clinicians = (await sql`
-    SELECT id, name FROM clinicians ORDER BY name
-  `) as unknown as Array<{ id: string; name: string }>;
+    sql`
+      SELECT id, name FROM clinicians ORDER BY name
+    ` as unknown as Promise<Array<{ id: string; name: string }>>,
 
-  // The rest of the chart, on the same terms. Each of these fed a fallback
-  // that quietly substituted wrong values for unreadable ones: a flat 30
-  // minutes for every past appointment, a blank name in place of the clinician
-  // who saw the patient, a prescription list with the override reasons
-  // stripped out. Those are not degraded views of the record, they are a
-  // different record, and nothing on the page said so.
-  const appts = (await sql`
-    SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, c.name AS clinician_name
-    FROM appointments a JOIN clinicians c ON c.id = a.clinician_id
-    WHERE a.patient_id = ${id} ORDER BY a.starts_at DESC LIMIT 8
-  `) as unknown as Appt[];
+    sql`
+      SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, c.name AS clinician_name
+      FROM appointments a JOIN clinicians c ON c.id = a.clinician_id
+      WHERE a.patient_id = ${id} ORDER BY a.starts_at DESC LIMIT 8
+    ` as unknown as Promise<Appt[]>,
 
-  const plans = (await sql`
-    SELECT p.id, p.procedure, p.phase, p.published_at, c.name AS clinician_name
-    FROM plans p JOIN clinicians c ON c.id = p.clinician_id
-    WHERE p.patient_id = ${id} ORDER BY p.created_at DESC
-  `) as unknown as Plan[];
+    sql`
+      SELECT p.id, p.procedure, p.phase, p.published_at, c.name AS clinician_name
+      FROM plans p JOIN clinicians c ON c.id = p.clinician_id
+      WHERE p.patient_id = ${id} ORDER BY p.created_at DESC
+    ` as unknown as Promise<Plan[]>,
 
-  const steps = (await sql`
-    SELECT s.plan_id, s.title, s.detail FROM plan_steps s
-    JOIN plans p ON p.id = s.plan_id WHERE p.patient_id = ${id} ORDER BY s.ordinal
-  `) as unknown as Step[];
+    sql`
+      SELECT s.plan_id, s.title, s.detail FROM plan_steps s
+      JOIN plans p ON p.id = s.plan_id WHERE p.patient_id = ${id} ORDER BY s.ordinal
+    ` as unknown as Promise<Step[]>,
 
-  const addenda = (await sql`
-    SELECT a.plan_id, a.body, a.created_at FROM plan_addenda a
-    JOIN plans p ON p.id = a.plan_id WHERE p.patient_id = ${id} ORDER BY a.created_at
-  `) as unknown as Addendum[];
+    sql`
+      SELECT a.plan_id, a.body, a.created_at FROM plan_addenda a
+      JOIN plans p ON p.id = a.plan_id WHERE p.patient_id = ${id} ORDER BY a.created_at
+    ` as unknown as Promise<Addendum[]>,
 
-  const rxs = (await sql`
-    SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
-           r.override_reason, c.name AS clinician_name
-    FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
-    WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC
-  `) as unknown as Rx[];
+    sql`
+      SELECT r.id, r.drug, r.dose, r.frequency, r.duration_days, r.indication, r.issued_at,
+             r.override_reason, c.name AS clinician_name
+      FROM prescriptions r JOIN clinicians c ON c.id = r.clinician_id
+      WHERE r.patient_id = ${id} ORDER BY r.issued_at DESC
+    ` as unknown as Promise<Rx[]>,
 
-  const reports = (await sql`
-    SELECT r.id, r.kind, r.title, r.summary, r.image, r.taken_at, r.released_at, r.clinician_id, c.name AS clinician_name
-    FROM reports r LEFT JOIN clinicians c ON c.id = r.clinician_id
-    WHERE r.patient_id = ${id} ORDER BY r.taken_at DESC
-  `) as unknown as ReportItem[];
+    sql`
+      SELECT r.id, r.kind, r.title, r.summary, r.image, r.taken_at, r.released_at, r.clinician_id, c.name AS clinician_name
+      FROM reports r LEFT JOIN clinicians c ON c.id = r.clinician_id
+      WHERE r.patient_id = ${id} ORDER BY r.taken_at DESC
+    ` as unknown as Promise<ReportItem[]>,
 
-  // An empty odontogram draws all 32 teeth as sound. Falling back to it on a
-  // read failure would assert a clean mouth for a patient whose charted decay
-  // simply could not be loaded, and would then let a clinician chart on top of
-  // that blank.
-  const savedChartRows = (await sql`
-    SELECT tooth_num, condition, notes FROM dental_chart WHERE patient_id = ${id}
-  `) as Array<{ tooth_num: number; condition: string; notes: string | null }>;
+    sql`
+      SELECT tooth_num, condition, notes FROM dental_chart WHERE patient_id = ${id}
+    ` as unknown as Promise<Array<{ tooth_num: number; condition: string; notes: string | null }>>,
+  ]);
 
   const overviewSection = (
     <div key="sec-overview">

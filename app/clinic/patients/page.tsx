@@ -11,18 +11,33 @@ type Row = {
 };
 
 export default async function PatientsPage() {
-  await requireStaff("/clinic/patients");
+  const user = await requireStaff("/clinic/patients");
 
-  // No fallback. The one removed here returned the roster with allergy_count
-  // hard-coded to 0, which clears the allergy marker beside every name on the
-  // list, and its own failure left an empty array that reads as "this practice
-  // has no patients".
+  // Filter so each clinician only sees their own patients (assigned or treated)
+  const isAdmin = user.role === "admin";
   const patients = (await db()`
     SELECT p.id, p.mrn, p.name, p.dob, p.photo, p.last_visit,
-           (SELECT count(*)::int FROM allergies a WHERE a.patient_id = p.id) AS allergy_count,
-           (SELECT min(ap.starts_at) FROM appointments ap
-             WHERE ap.patient_id = p.id AND ap.status = 'confirmed' AND ap.starts_at >= now()) AS next_visit
+           COALESCE(al.allergy_count, 0)::int AS allergy_count,
+           ap.next_visit
     FROM patients p
+    LEFT JOIN (
+      SELECT patient_id, count(*)::int AS allergy_count
+      FROM allergies
+      GROUP BY patient_id
+    ) al ON al.patient_id = p.id
+    LEFT JOIN (
+      SELECT patient_id, min(starts_at) AS next_visit
+      FROM appointments
+      WHERE status = 'confirmed' AND starts_at >= now()
+      GROUP BY patient_id
+    ) ap ON ap.patient_id = p.id
+    WHERE (${isAdmin}::boolean = true) OR (
+      p.primary_clinician_id = ${user.clinicianId}
+      OR EXISTS (SELECT 1 FROM appointments a WHERE a.patient_id = p.id AND a.clinician_id = ${user.clinicianId})
+      OR EXISTS (SELECT 1 FROM plans pl WHERE pl.patient_id = p.id AND pl.clinician_id = ${user.clinicianId})
+      OR EXISTS (SELECT 1 FROM prescriptions pr WHERE pr.patient_id = p.id AND pr.clinician_id = ${user.clinicianId})
+      OR EXISTS (SELECT 1 FROM reports rp WHERE rp.patient_id = p.id AND rp.clinician_id = ${user.clinicianId})
+    )
     ORDER BY p.name
   `) as unknown as Row[];
 
@@ -49,8 +64,9 @@ export default async function PatientsPage() {
 
       <main className="page" id="main">
         <p className="page-intro">
-          Everyone registered with the practice. Opening a chart is recorded in the audit
-          trail against your name.
+          {isAdmin
+            ? "Practice-wide patient registry. Opening a chart is recorded in the audit trail against your name."
+            : "Your assigned patients and patients under your clinical care. Opening a chart is recorded in the audit trail against your name."}
         </p>
 
         <section className="panel">

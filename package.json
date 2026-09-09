@@ -7,7 +7,9 @@
     "dev": "next dev -p 5178",
     "build": "next build",
     "start": "next start -p 5178",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "analyze": "node scripts/analyze.mjs",
+    "audit:speed": "lhci autorun"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
@@ -18,6 +20,8 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@lhci/cli": "^0.15.1",
+    "@next/bundle-analyzer": "^16.3.4",
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",

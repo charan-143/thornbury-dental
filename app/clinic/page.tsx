@@ -51,37 +51,37 @@ export default async function ClinicToday() {
   // stamped each one with a flat 30 minutes and a blank room, and discarded
   // the allergy summary the chip beside each name is drawn from. Nothing on
   // the page said any of that had happened.
-  const list = (await sql`
-    SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
-           p.id AS patient_id, p.name AS patient_name, p.mrn, p.dob,
-           (SELECT string_agg(al.substance, ', ') FROM allergies al WHERE al.patient_id = p.id) AS allergy_list
-    FROM appointments a
-    JOIN patients p ON p.id = a.patient_id
-    WHERE a.clinician_id = ${user.clinicianId}
-      AND a.starts_at >= ${startIso}
-      AND a.starts_at < ${endIso}
-    ORDER BY a.starts_at ASC
-  `) as unknown as Row[];
+  // Run all dashboard queries in parallel to eliminate waterfalls and load immediately
+  const [list, drafts, held, chain] = await Promise.all([
+    sql`
+      SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
+             p.id AS patient_id, p.name AS patient_name, p.mrn, p.dob,
+             (SELECT string_agg(al.substance, ', ') FROM allergies al WHERE al.patient_id = p.id) AS allergy_list
+      FROM appointments a
+      JOIN patients p ON p.id = a.patient_id
+      WHERE a.clinician_id = ${user.clinicianId}
+        AND a.starts_at >= ${startIso}
+        AND a.starts_at < ${endIso}
+      ORDER BY a.starts_at ASC
+    ` as unknown as Promise<Row[]>,
+
+    sql`
+      SELECT p.id, p.procedure, p.phase, pt.name AS patient_name, pt.id AS patient_id
+      FROM plans p JOIN patients pt ON pt.id = p.patient_id
+      WHERE p.clinician_id = ${user.clinicianId} AND p.published_at IS NULL
+    ` as unknown as Promise<Draft[]>,
+
+    sql`
+      SELECT r.id, r.title, r.kind, pt.name AS patient_name, pt.id AS patient_id
+      FROM reports r JOIN patients pt ON pt.id = r.patient_id
+      WHERE r.clinician_id = ${user.clinicianId} AND r.released_at IS NULL
+    ` as unknown as Promise<Held[]>,
+
+    verifyChain(),
+  ]);
 
   const active = list.filter((row) => row.status === "confirmed");
   const minutes = active.reduce((total, row) => total + (row.duration_min || 30), 0);
-
-  const drafts = (await sql`
-    SELECT p.id, p.procedure, p.phase, pt.name AS patient_name, pt.id AS patient_id
-    FROM plans p JOIN patients pt ON pt.id = p.patient_id
-    WHERE p.clinician_id = ${user.clinicianId} AND p.published_at IS NULL
-  `) as unknown as Draft[];
-
-  // Unreleased reports are a to-do list. An empty one on a failed read says
-  // "nothing is waiting on you", which is the opposite of what the failure
-  // actually meant.
-  const held = (await sql`
-    SELECT r.id, r.title, r.kind, pt.name AS patient_name, pt.id AS patient_id
-    FROM reports r JOIN patients pt ON pt.id = r.patient_id
-    WHERE r.clinician_id = ${user.clinicianId} AND r.released_at IS NULL
-  `) as unknown as Held[];
-
-  const chain = await verifyChain();
 
   return (
     <>

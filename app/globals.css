@@ -66,8 +66,8 @@
   --info-wash: #e4f1ee;
 
   /* --- type -------------------------------------------------------------- */
-  --font-display: "Newsreader", "Tiempos Headline", Georgia, serif;
-  --font-sans: "StyreneB", "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-newsreader), "Newsreader", "Tiempos Headline", Georgia, serif;
+  --font-sans: var(--font-inter), "StyreneB", "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   /* Capped at 3.25rem rather than DESIGN.md's 64px: the hero headline is six
@@ -2212,6 +2212,50 @@ button.row:hover { background: var(--surface-soft); }
     display: none !important;
   }
 }
+
+/* --- Instant Navigation Transition Skeleton & Shimmer --- */
+@keyframes nav-shimmer {
+  0% { opacity: 0.45; }
+  50% { opacity: 0.85; }
+  100% { opacity: 0.45; }
+}
+
+.skeleton-shimmer {
+  animation: nav-shimmer 1.2s infinite ease-in-out;
+  background: var(--hairline-soft);
+  border-radius: var(--r-control);
+}
+
+.loading-container {
+  padding: var(--s-lg);
+  display: grid;
+  gap: var(--s-lg);
+}
+
+.loading-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  margin-bottom: var(--s-md);
+}
+
+.loading-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s-md);
+}
+
+.loading-card {
+  height: 120px;
+  border-radius: var(--r-card);
+}
+
+.loading-panel {
+  height: 380px;
+  border-radius: var(--r-card);
+}
+
 
 
 

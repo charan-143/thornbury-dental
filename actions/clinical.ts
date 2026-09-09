@@ -89,9 +89,9 @@ export async function createPatientAction(
   // collects them.
   try {
     await sql`
-      INSERT INTO patients (id, mrn, op_no, name, dob, phone, email, address)
+      INSERT INTO patients (id, mrn, op_no, name, dob, phone, email, address, primary_clinician_id)
       VALUES (${id}, ${mrn}, ${opNo}, ${name}, ${dob}, ${phone || null}, ${email || null},
-              ${address || null})
+              ${address || null}, ${user.clinicianId})
     `;
   } catch (error) {
     const message = error instanceof Error ? error.message : "";

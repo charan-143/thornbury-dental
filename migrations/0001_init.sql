@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS patients (
   past_dental_history TEXT,
   photo               TEXT,
   last_visit          DATE,
+  primary_clinician_id TEXT REFERENCES clinicians(id),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(lower(name));

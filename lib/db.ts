@@ -26,6 +26,31 @@ export function assertDatabaseUrl(): string {
 let neonInitPromise: Promise<void> | null = null;
 
 async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
+  // Fast path: if schema is already provisioned, ensure primary_clinician_id exists and skip full DDL
+  try {
+    const check = await client.query(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'patients' LIMIT 1"
+    );
+    if (check && (check as any[]).length > 0) {
+      try {
+        await client.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS primary_clinician_id TEXT;");
+        await client.query(`
+          UPDATE patients SET primary_clinician_id = (
+            SELECT clinician_id FROM appointments WHERE appointments.patient_id = patients.id LIMIT 1
+          ) WHERE primary_clinician_id IS NULL;
+        `);
+        await client.query(`
+          UPDATE patients SET primary_clinician_id = (
+            SELECT id FROM clinicians WHERE active ORDER BY id LIMIT 1
+          ) WHERE primary_clinician_id IS NULL;
+        `);
+      } catch (colErr) {
+        console.warn("Fast-path primary_clinician_id migration notice:", colErr instanceof Error ? colErr.message : String(colErr));
+      }
+      return;
+    }
+  } catch (e) {}
+
   // Self-healing pre-migration: if `patients` table already exists from an older schema
   // or separate branch, ensure its columns and primary key constraints match what
   // dependent tables (allergies, plans, prescriptions, etc.) require for foreign keys.
@@ -178,20 +203,21 @@ async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
       window_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );`,
     `CREATE TABLE IF NOT EXISTS patients (
-      id                  TEXT PRIMARY KEY,
-      mrn                 TEXT NOT NULL UNIQUE,
-      op_no               TEXT,
-      name                TEXT NOT NULL,
-      dob                 DATE NOT NULL,
-      phone               TEXT,
-      email               TEXT,
-      address             TEXT,
-      medical_history     TEXT,
-      family_history      TEXT,
-      past_dental_history TEXT,
-      photo               TEXT,
-      last_visit          DATE,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+      id                   TEXT PRIMARY KEY,
+      mrn                  TEXT NOT NULL UNIQUE,
+      op_no                TEXT,
+      name                 TEXT NOT NULL,
+      dob                  DATE NOT NULL,
+      phone                TEXT,
+      email                TEXT,
+      address              TEXT,
+      primary_clinician_id TEXT REFERENCES clinicians(id) ON DELETE SET NULL,
+      medical_history      TEXT,
+      family_history       TEXT,
+      past_dental_history  TEXT,
+      photo                TEXT,
+      last_visit           DATE,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
     );`,
     `CREATE TABLE IF NOT EXISTS allergies (
       id         TEXT PRIMARY KEY,
@@ -359,6 +385,7 @@ async function ensureNeonColumns(client: NeonQueryFunction<false, false>) {
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS medical_history TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS family_history TEXT;`; } catch (e) {}
   try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS past_dental_history TEXT;`; } catch (e) {}
+  try { await client`ALTER TABLE patients ADD COLUMN IF NOT EXISTS primary_clinician_id TEXT;`; } catch (e) {}
 
   try { await client`ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS refills INTEGER NOT NULL DEFAULT 0;`; } catch (e) {}
   try { await client`ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS override_reason TEXT;`; } catch (e) {}
