@@ -39,10 +39,10 @@ export function PatientChartTabs({
 
   const tabs: Array<{ key: TabKey; label: string; icon: string; count?: number }> = [
     { key: "overview", label: "Demographics / Overview", icon: "identification-card" },
-    { key: "odontogram", label: "Dental Odontogram", icon: "tooth" },
-    { key: "plans", label: "Diagnosis & Treatment Plans", icon: "clipboard-text", count: counts.plans },
-    { key: "rxs", label: "Prescriptions", icon: "first-aid-kit", count: counts.rxs },
+    { key: "odontogram", label: "Examination", icon: "tooth" },
     { key: "reports", label: "Reports & Imaging", icon: "file-image", count: counts.reports },
+    { key: "plans", label: "Diagnosis and Treatment", icon: "clipboard-text", count: counts.plans },
+    { key: "rxs", label: "Prescriptions", icon: "first-aid-kit", count: counts.rxs },
     { key: "appts", label: "Visit History", icon: "calendar-blank", count: counts.appts },
   ];
 
@@ -94,6 +94,17 @@ export function PatientChartTabs({
           {odontogramContent}
         </div>
         <div
+          id="tab-panel-reports"
+          role="tabpanel"
+          hidden={activeTab !== "reports"}
+          style={{
+            display: activeTab === "reports" ? "block" : "none",
+            contentVisibility: activeTab === "reports" ? "visible" : "hidden",
+          }}
+        >
+          {reportsContent}
+        </div>
+        <div
           id="tab-panel-plans"
           role="tabpanel"
           hidden={activeTab !== "plans"}
@@ -114,17 +125,6 @@ export function PatientChartTabs({
           }}
         >
           {rxsContent}
-        </div>
-        <div
-          id="tab-panel-reports"
-          role="tabpanel"
-          hidden={activeTab !== "reports"}
-          style={{
-            display: activeTab === "reports" ? "block" : "none",
-            contentVisibility: activeTab === "reports" ? "visible" : "hidden",
-          }}
-        >
-          {reportsContent}
         </div>
         <div
           id="tab-panel-appts"
