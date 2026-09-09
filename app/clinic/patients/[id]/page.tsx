@@ -192,7 +192,11 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
 
   const odontogramSection = (
     <div key="sec-odontogram" style={{ display: "grid", gap: 24 }}>
-      <DentalChart patientId={patient.id} initialChart={savedChartRows} />
+      <DentalChart
+        patientId={patient.id}
+        initialChart={savedChartRows}
+        conditions={conditions}
+      />
     </div>
   );
 
@@ -200,10 +204,10 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
     <TreatmentPlansView
       key="sec-plans"
       patientId={patient.id}
-      conditions={conditions}
       plans={plans}
       steps={steps}
       addenda={addenda}
+      conditions={conditions}
     />
   );
 
@@ -227,6 +231,7 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
       patientName={patient.name}
       reports={reports}
       clinicians={clinicians}
+      currentClinicianId={user.clinicianId}
     />
   );
 

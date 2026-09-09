@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { saveToothChartAction, getToothChartAction } from "@/actions/clinical";
+import {
+  saveToothChartAction,
+  getToothChartAction,
+} from "@/actions/clinical";
+import { ClinicalDiagnosisCard } from "@/components/clinical-diagnosis-card";
 
 export type ToothCondition = string;
 
@@ -125,9 +129,10 @@ function saveLocalCustomConditions(pId: string, conds: string[]) {
 interface DentalChartProps {
   patientId: string;
   initialChart?: Array<{ tooth_num: number; condition: string; notes: string | null }>;
+  conditions?: Array<{ label: string }>;
 }
 
-export function DentalChart({ patientId, initialChart }: DentalChartProps) {
+export function DentalChart({ patientId, initialChart, conditions = [] }: DentalChartProps) {
   const [customConditions, setCustomConditions] = useState<string[]>(() => {
     const custom: string[] = [];
     if (initialChart && initialChart.length > 0) {
@@ -484,17 +489,22 @@ export function DentalChart({ patientId, initialChart }: DentalChartProps) {
   };
 
   return (
-    <section className="panel odontogram-panel">
-      <div className="panel-head">
-        <h2>
-          <i className="ph ph-tooth" aria-hidden="true" style={{ color: "var(--primary)" }} />
-          32-Tooth 4-Quadrant Dental Odontogram
-        </h2>
-        <div className="spacer" />
-        <span className="badge badge-info">FDI 4-Quadrant View</span>
-      </div>
+    <div style={{ display: "grid", gap: 24 }}>
+      {/* 1. Clinical Examination Findings & Diagnoses */}
+      <ClinicalDiagnosisCard patientId={patientId} conditions={conditions} />
 
-      <div className="panel-body">
+      {/* 2. Dental Odontogram Panel */}
+      <section className="panel odontogram-panel">
+        <div className="panel-head">
+          <h2>
+            <i className="ph ph-tooth" aria-hidden="true" style={{ color: "var(--primary)" }} />
+            32-Tooth 4-Quadrant Dental Odontogram
+          </h2>
+          <div className="spacer" />
+          <span className="badge badge-info">FDI 4-Quadrant View</span>
+        </div>
+
+        <div className="panel-body">
         {/* Odontogram Top Toolbar: Visual Condition Key & Add Custom Condition Button */}
         <div
           style={{
@@ -652,6 +662,7 @@ export function DentalChart({ patientId, initialChart }: DentalChartProps) {
           </div>
         </div>
       </div>
-    </section>
+      </section>
+    </div>
   );
 }
