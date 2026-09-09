@@ -132,16 +132,33 @@ export type AuditRow = {
   outcome: string;
 };
 
-export async function readAudit(limit = 100, patientId?: string): Promise<AuditRow[]> {
+export async function readAudit(limit = 100, patientId?: string, actorId?: string): Promise<AuditRow[]> {
   try {
     const sql = db();
-    const rows = patientId
-      ? await sql`
-          SELECT seq, at, actor_id, actor_role, action, entity, entity_id, patient_id, outcome
-          FROM audit WHERE patient_id = ${patientId} ORDER BY seq DESC LIMIT ${limit}`
-      : await sql`
-          SELECT seq, at, actor_id, actor_role, action, entity, entity_id, patient_id, outcome
-          FROM audit ORDER BY seq DESC LIMIT ${limit}`;
+    if (patientId && actorId) {
+      const rows = await sql`
+        SELECT seq, at, actor_id, actor_role, action, entity, entity_id, patient_id, outcome
+        FROM audit WHERE patient_id = ${patientId} AND actor_id = ${actorId}
+        ORDER BY seq DESC LIMIT ${limit}`;
+      return rows as unknown as AuditRow[];
+    }
+    if (patientId) {
+      const rows = await sql`
+        SELECT seq, at, actor_id, actor_role, action, entity, entity_id, patient_id, outcome
+        FROM audit WHERE patient_id = ${patientId}
+        ORDER BY seq DESC LIMIT ${limit}`;
+      return rows as unknown as AuditRow[];
+    }
+    if (actorId) {
+      const rows = await sql`
+        SELECT seq, at, actor_id, actor_role, action, entity, entity_id, patient_id, outcome
+        FROM audit WHERE actor_id = ${actorId}
+        ORDER BY seq DESC LIMIT ${limit}`;
+      return rows as unknown as AuditRow[];
+    }
+    const rows = await sql`
+      SELECT seq, at, actor_id, actor_role, action, entity, entity_id, patient_id, outcome
+      FROM audit ORDER BY seq DESC LIMIT ${limit}`;
     return rows as unknown as AuditRow[];
   } catch (err) {
     console.warn("readAudit notice:", err instanceof Error ? err.message : String(err));
@@ -149,12 +166,23 @@ export async function readAudit(limit = 100, patientId?: string): Promise<AuditR
   }
 }
 
+let cachedChainResult: { ok: boolean; checked: number; brokenAtSeq?: number } | null = null;
+let lastChainCheck = 0;
+
 /**
  * Walks the chain from the beginning and reports the first break. Surfaced in
  * the workspace so the trail can be shown to be intact rather than merely
  * asserted to be.
+ *
+ * Cached in memory for 60 seconds to avoid repeating full-table cryptographic
+ * recalculations on every single page view.
  */
 export async function verifyChain(): Promise<{ ok: boolean; checked: number; brokenAtSeq?: number }> {
+  const now = Date.now();
+  if (cachedChainResult && now - lastChainCheck < 60_000) {
+    return cachedChainResult;
+  }
+
   try {
     const rows = (await db()`
       SELECT seq, at, actor_id, actor_role, action, entity, entity_id, patient_id, outcome, prev_hash, hash
@@ -184,7 +212,10 @@ export async function verifyChain(): Promise<{ ok: boolean; checked: number; bro
 
       prevHash = row.hash;
     }
-    return { ok: true, checked: rows.length };
+    const result = { ok: true, checked: rows.length };
+    cachedChainResult = result;
+    lastChainCheck = now;
+    return result;
   } catch (err) {
     console.warn("verifyChain notice:", err instanceof Error ? err.message : String(err));
     return { ok: true, checked: 0 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 
 type TabKey = "overview" | "odontogram" | "plans" | "rxs" | "reports" | "appts";
 
@@ -29,6 +29,13 @@ export function PatientChartTabs({
   counts,
 }: PatientChartTabsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [, startTransition] = useTransition();
+
+  const handleTabChange = (key: TabKey) => {
+    startTransition(() => {
+      setActiveTab(key);
+    });
+  };
 
   const tabs: Array<{ key: TabKey; label: string; icon: string; count?: number }> = [
     { key: "overview", label: "Demographics / Overview", icon: "identification-card" },
@@ -49,8 +56,9 @@ export function PatientChartTabs({
             type="button"
             role="tab"
             aria-selected={activeTab === tab.key}
+            aria-controls={`tab-panel-${tab.key}`}
             className={`chart-tab-btn ${activeTab === tab.key ? "is-active" : ""}`}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => handleTabChange(tab.key)}
           >
             <i className={`ph ph-${tab.icon}`} aria-hidden="true" />
             <span>{tab.label}</span>
@@ -63,22 +71,70 @@ export function PatientChartTabs({
 
       {/* Tab Panels */}
       <div className="chart-tab-content">
-        <div key="tab-panel-overview" style={{ display: activeTab === "overview" ? "block" : "none" }}>
+        <div
+          id="tab-panel-overview"
+          role="tabpanel"
+          hidden={activeTab !== "overview"}
+          style={{
+            display: activeTab === "overview" ? "block" : "none",
+            contentVisibility: activeTab === "overview" ? "visible" : "hidden",
+          }}
+        >
           {overviewContent}
         </div>
-        <div key="tab-panel-odontogram" style={{ display: activeTab === "odontogram" ? "block" : "none" }}>
+        <div
+          id="tab-panel-odontogram"
+          role="tabpanel"
+          hidden={activeTab !== "odontogram"}
+          style={{
+            display: activeTab === "odontogram" ? "block" : "none",
+            contentVisibility: activeTab === "odontogram" ? "visible" : "hidden",
+          }}
+        >
           {odontogramContent}
         </div>
-        <div key="tab-panel-plans" style={{ display: activeTab === "plans" ? "block" : "none" }}>
+        <div
+          id="tab-panel-plans"
+          role="tabpanel"
+          hidden={activeTab !== "plans"}
+          style={{
+            display: activeTab === "plans" ? "block" : "none",
+            contentVisibility: activeTab === "plans" ? "visible" : "hidden",
+          }}
+        >
           {plansContent}
         </div>
-        <div key="tab-panel-rxs" style={{ display: activeTab === "rxs" ? "block" : "none" }}>
+        <div
+          id="tab-panel-rxs"
+          role="tabpanel"
+          hidden={activeTab !== "rxs"}
+          style={{
+            display: activeTab === "rxs" ? "block" : "none",
+            contentVisibility: activeTab === "rxs" ? "visible" : "hidden",
+          }}
+        >
           {rxsContent}
         </div>
-        <div key="tab-panel-reports" style={{ display: activeTab === "reports" ? "block" : "none" }}>
+        <div
+          id="tab-panel-reports"
+          role="tabpanel"
+          hidden={activeTab !== "reports"}
+          style={{
+            display: activeTab === "reports" ? "block" : "none",
+            contentVisibility: activeTab === "reports" ? "visible" : "hidden",
+          }}
+        >
           {reportsContent}
         </div>
-        <div key="tab-panel-appts" style={{ display: activeTab === "appts" ? "block" : "none" }}>
+        <div
+          id="tab-panel-appts"
+          role="tabpanel"
+          hidden={activeTab !== "appts"}
+          style={{
+            display: activeTab === "appts" ? "block" : "none",
+            contentVisibility: activeTab === "appts" ? "visible" : "hidden",
+          }}
+        >
           {apptsContent}
         </div>
       </div>

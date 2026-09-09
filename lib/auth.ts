@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
+import { cache } from "react";
 import { db, newId, nowIso, sha256 } from "./db";
 import { record } from "./audit";
 import { burnTime, hashPassword, verifyPassword, passwordIssues } from "./password";
@@ -54,6 +55,8 @@ export type SessionUser = {
   clinicianId: string;
   email: string;
   name: string;
+  room: string;
+  photo: string | null;
 };
 
 const normalise = (email: string) => String(email ?? "").trim().toLowerCase();
@@ -169,8 +172,11 @@ async function issueSession(account: Account): Promise<void> {
  * Resolves the caller from the session cookie, enforcing both expiry limits on
  * every request. Returns null rather than throwing, so callers choose between
  * redirecting and refusing.
+ *
+ * Wrapped in React.cache() so layout and page components share a single
+ * session resolution without duplicate database round-trips.
  */
-export async function currentUser(): Promise<SessionUser | null> {
+export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -179,7 +185,7 @@ export async function currentUser(): Promise<SessionUser | null> {
   const rows = (await sql`
     SELECT s.id AS session_id, s.expires_at, s.last_seen_at, s.revoked_at,
            a.id AS account_id, a.role, a.clinician_id, a.email, a.disabled_at,
-           c.name AS name
+           c.name AS name, COALESCE(c.room, '') AS room, c.photo AS photo
     FROM sessions s
     JOIN accounts a ON a.id = s.account_id
     JOIN clinicians c ON c.id = a.clinician_id
@@ -195,6 +201,8 @@ export async function currentUser(): Promise<SessionUser | null> {
     email: string;
     disabled_at: Date | null;
     name: string;
+    room: string;
+    photo: string | null;
   }>;
 
   const row = rows[0];
@@ -229,8 +237,10 @@ export async function currentUser(): Promise<SessionUser | null> {
     clinicianId: row.clinician_id,
     email: row.email,
     name: row.name,
+    room: row.room ?? "",
+    photo: row.photo ?? null,
   };
-}
+});
 
 export async function signOut(): Promise<void> {
   try {

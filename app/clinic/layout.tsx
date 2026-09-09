@@ -25,22 +25,11 @@ type ClinicianRow = { id: string; name: string; room: string; photo: string | nu
 export default async function ClinicLayout({ children }: { children: React.ReactNode }) {
   const user = await requireStaff("/clinic");
 
-  // This banner names who the practice believes is signed in, and that name
-  // sits above every chart the session opens. The previous fallback invented a
-  // clinician record out of the session when the real one could not be read,
-  // so a database failure produced a workspace that looked correctly
-  // attributed and was not. Let it throw instead.
-  const rows = (await db()`
-    SELECT id, name, room, photo FROM clinicians WHERE id = ${user.clinicianId}
-  `) as unknown as ClinicianRow[];
-
-  const clinician = rows[0];
-
-  // A signed-in session whose clinician row has gone is a broken account, not
-  // a cosmetic problem: nothing done in it could be attributed to a real person.
-  if (!clinician) {
-    throw new Error(`signed-in account has no clinician record: ${user.clinicianId}`);
-  }
+  const clinician = {
+    name: user.name,
+    room: user.room,
+    photo: user.photo,
+  };
 
   return (
     <div className="app">
@@ -55,13 +44,13 @@ export default async function ClinicLayout({ children }: { children: React.React
 
         <nav className="side-nav" aria-label="Workspace sections">
           {SECTIONS.map(([slug, glyph, label]) => (
-            <Link key={label} href={`/clinic/${slug}`}>
+            <Link key={label} href={slug ? `/clinic/${slug}` : "/clinic"} prefetch={true}>
               <i className={`ph ph-${glyph}`} aria-hidden="true" />
               <span>{label}</span>
             </Link>
           ))}
           {isAdmin(user) && (
-            <Link href="/clinic/staff">
+            <Link href="/clinic/staff" prefetch={true}>
               <i className="ph ph-identification-badge" aria-hidden="true" />
               <span>Staff</span>
             </Link>

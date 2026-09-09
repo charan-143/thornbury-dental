@@ -70,6 +70,7 @@ async function initPGlite(): Promise<any> {
   await pgliteInstance.exec(`
     ALTER TABLE patients ADD COLUMN IF NOT EXISTS op_no TEXT;
     ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE patients ADD COLUMN IF NOT EXISTS primary_clinician_id TEXT;
     ALTER TABLE patients ADD COLUMN IF NOT EXISTS medical_history TEXT;
     ALTER TABLE patients ADD COLUMN IF NOT EXISTS family_history TEXT;
     ALTER TABLE patients ADD COLUMN IF NOT EXISTS past_dental_history TEXT;

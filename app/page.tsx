@@ -38,7 +38,7 @@ const CARE_PATH = [
   ["heartbeat", "Recover", "Written aftercare, and a number to call if something changes."],
 ] as const;
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 /**
  * The clinician roster is the only dynamic part of this page. If the database

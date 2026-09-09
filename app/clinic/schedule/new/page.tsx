@@ -30,8 +30,17 @@ export default async function NewAppointmentPage({
   const requested = Number(params.duration ?? 30);
   const duration = DURATIONS.includes(requested as (typeof DURATIONS)[number]) ? requested : 30;
 
+  const isAdmin = user.role === "admin";
   const patients = (await db()`
-    SELECT id, name, mrn FROM patients ORDER BY name
+    SELECT id, name, mrn FROM patients
+    WHERE (${isAdmin}::boolean = true) OR (
+      primary_clinician_id = ${user.clinicianId}
+      OR EXISTS (SELECT 1 FROM appointments a WHERE a.patient_id = patients.id AND a.clinician_id = ${user.clinicianId})
+      OR EXISTS (SELECT 1 FROM plans pl WHERE pl.patient_id = patients.id AND pl.clinician_id = ${user.clinicianId})
+      OR EXISTS (SELECT 1 FROM prescriptions pr WHERE pr.patient_id = patients.id AND pr.clinician_id = ${user.clinicianId})
+      OR EXISTS (SELECT 1 FROM reports rp WHERE rp.patient_id = patients.id AND rp.clinician_id = ${user.clinicianId})
+    )
+    ORDER BY name
   `) as unknown as Patient[];
 
   const slots = await freeSlots(user.clinicianId, date, duration);
