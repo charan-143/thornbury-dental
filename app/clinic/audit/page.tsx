@@ -1,5 +1,5 @@
 import { requireStaff } from "@/lib/authz";
-import { readAudit, verifyChain } from "@/lib/audit";
+import { readAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import { AuditFilterView, AuditEntryItem } from "@/components/audit-filter-view";
 
@@ -10,7 +10,6 @@ export default async function AuditPage() {
 
   // Audit trail is tailored specifically to each user: only show entries where actor is this clinician
   const entries = await readAudit(200, undefined, user.clinicianId);
-  const chain = await verifyChain();
 
   const names = (await db()`
     SELECT id, name FROM clinicians WHERE id = ${user.clinicianId}
@@ -35,24 +34,6 @@ export default async function AuditPage() {
         <p className="page-intro">
           Your personal activity log. Records your appointment bookings, cancellations, completions, and patient registrations.
         </p>
-
-        <div className={chain.ok ? "alert alert-success" : "alert alert-critical"} role="status">
-          <i className={`ph ph-${chain.ok ? "check-circle" : "warning-octagon"}`} aria-hidden="true" />
-          <span>
-            {chain.ok ? (
-              <>
-                <strong>Chain intact across {chain.checked} entries.</strong> Each entry commits to
-                the digest of the one before it, and the database refuses updates and deletes on
-                this table, so an altered or removed row would show up here.
-              </>
-            ) : (
-              <>
-                <strong>Chain broken at entry {chain.brokenAtSeq}.</strong> Entries from that point
-                cannot be trusted. Escalate before relying on this trail.
-              </>
-            )}
-          </span>
-        </div>
 
         <section className="panel">
           <AuditFilterView entries={formattedEntries} clinicians={names} isAdmin={false} />
