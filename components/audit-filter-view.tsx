@@ -38,11 +38,13 @@ export function AuditFilterView({ entries, clinicians, isAdmin = false }: AuditF
   const actionCategories = useMemo(() => {
     const categories = new Set<string>();
     entries.forEach((e) => {
-      if (e.action.includes("signin")) categories.add("signin");
-      else if (e.action.includes("chart")) categories.add("chart_access");
-      else if (e.action.includes("appointment")) categories.add("appointment");
-      else if (e.action.includes("prescription")) categories.add("prescription");
-      else categories.add("other");
+      if (e.entity === "appointment" || e.action.includes("appointment")) {
+        categories.add("appointments");
+      } else if (e.entity === "patient" || e.action.includes("patient")) {
+        categories.add("patient_registry");
+      } else {
+        categories.add("other");
+      }
     });
     return Array.from(categories);
   }, [entries]);
@@ -60,18 +62,13 @@ export function AuditFilterView({ entries, clinicians, isAdmin = false }: AuditF
 
       // Action category filter
       if (selectedActionGroup !== "all") {
-        if (selectedActionGroup === "signin" && !e.action.includes("signin")) return false;
-        if (selectedActionGroup === "chart_access" && !e.action.includes("chart")) return false;
-        if (selectedActionGroup === "appointment" && !e.action.includes("appointment")) return false;
-        if (selectedActionGroup === "prescription" && !e.action.includes("prescription")) return false;
-        if (
-          selectedActionGroup === "other" &&
-          (e.action.includes("signin") ||
-            e.action.includes("chart") ||
-            e.action.includes("appointment") ||
-            e.action.includes("prescription"))
-        ) {
-          return false;
+        if (selectedActionGroup === "appointments") {
+          if (e.entity !== "appointment" && !e.action.includes("appointment")) return false;
+        } else if (selectedActionGroup === "patient_registry") {
+          if (e.entity !== "patient" && !e.action.includes("patient")) return false;
+        } else if (selectedActionGroup === "other") {
+          if (e.entity === "appointment" || e.action.includes("appointment")) return false;
+          if (e.entity === "patient" || e.action.includes("patient")) return false;
         }
       }
 

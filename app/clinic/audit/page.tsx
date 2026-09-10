@@ -7,16 +7,14 @@ export const dynamic = "force-dynamic";
 
 export default async function AuditPage() {
   const user = await requireStaff("/clinic/audit");
-  const isAdmin = user.role === "admin";
 
-  const entries = await readAudit(200, undefined, isAdmin ? undefined : user.clinicianId);
+  // Audit trail is tailored specifically to each user: only show entries where actor is this clinician
+  const entries = await readAudit(200, undefined, user.clinicianId);
   const chain = await verifyChain();
-  // Without these the trail still renders, but every actor shows as a raw id,
-  // which is not a readable compliance record. readAudit and verifyChain above
-  // already fail loudly; this read is no less load-bearing than they are.
-  const names = isAdmin
-    ? ((await db()`SELECT id, name FROM clinicians`) as unknown as Array<{ id: string; name: string }>)
-    : ((await db()`SELECT id, name FROM clinicians WHERE id = ${user.clinicianId}`) as unknown as Array<{ id: string; name: string }>);
+
+  const names = (await db()`
+    SELECT id, name FROM clinicians WHERE id = ${user.clinicianId}
+  `) as unknown as Array<{ id: string; name: string }>;
 
   const formattedEntries: AuditEntryItem[] = entries.map((e) => ({
     seq: e.seq,
@@ -35,9 +33,7 @@ export default async function AuditPage() {
 
       <main className="page" id="main">
         <p className="page-intro">
-          {isAdmin
-            ? "Practice-wide audit log. Every clinical write and chart access across all staff members."
-            : "Your personal activity log. Every clinical action and chart access recorded under your name."}
+          Your personal activity log. Records your appointment bookings, cancellations, completions, and patient registrations.
         </p>
 
         <div className={chain.ok ? "alert alert-success" : "alert alert-critical"} role="status">
@@ -59,7 +55,7 @@ export default async function AuditPage() {
         </div>
 
         <section className="panel">
-          <AuditFilterView entries={formattedEntries} clinicians={names} isAdmin={isAdmin} />
+          <AuditFilterView entries={formattedEntries} clinicians={names} isAdmin={false} />
         </section>
       </main>
     </>
