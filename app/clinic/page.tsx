@@ -1,40 +1,28 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/authz";
-import { verifyChain } from "@/lib/audit";
 import { db, isoDate } from "@/lib/db";
 import { dayBounds } from "@/lib/scheduling";
-
-/**
- * Clinical day view.
- *
- * The list is scoped to the signed-in clinician, so one workspace does not show
- * another clinician list. Drafts and unreleased results are surfaced here on
- * purpose: both are states where a patient is waiting on someone, and a queue
- * nobody can see is how they get forgotten.
- */
+import { setAppointmentStatusAction } from "@/actions/clinical";
+import { TodayView, TodayAppointment } from "@/components/today-view";
 
 export const dynamic = "force-dynamic";
 
-const pad = (n: number) => String(n).padStart(2, "0");
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-function formatTime(value: Date | string): string {
-  const d = value instanceof Date ? value : new Date(value);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function age(dob: Date | string): number {
-  const born = dob instanceof Date ? dob : new Date(dob);
-  const now = new Date();
-  let years = now.getFullYear() - born.getFullYear();
-  const m = now.getMonth() - born.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < born.getDate())) years -= 1;
-  return years;
-}
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 type Row = {
-  id: string; starts_at: Date; duration_min: number; type: string; status: string; room: string;
-  patient_id: string; patient_name: string; mrn: string; dob: Date; allergy_list: string | null;
+  id: string;
+  starts_at: Date;
+  duration_min: number;
+  type: string;
+  status: string;
+  room: string;
+  patient_id: string;
+  patient_name: string;
+  mrn: string;
+  dob: Date;
+  allergy_list: string | null;
+  allergy_count: number;
 };
 type Draft = { id: string; procedure: string; phase: string; patient_name: string; patient_id: string };
 type Held = { id: string; title: string; kind: string; patient_name: string; patient_id: string };
@@ -45,18 +33,13 @@ export default async function ClinicToday() {
   const today = isoDate();
   const { startIso, endIso } = dayBounds(today);
 
-  // This list is the working day. Its previous fallback was worse than no
-  // list at all: it dropped the two date bounds, so a failure of the real
-  // query turned "today" into every appointment this clinician has ever had,
-  // stamped each one with a flat 30 minutes and a blank room, and discarded
-  // the allergy summary the chip beside each name is drawn from. Nothing on
-  // the page said any of that had happened.
-  // Run all dashboard queries in parallel to eliminate waterfalls and load immediately
-  const [list, drafts, held, chain] = await Promise.all([
+  // Run queries in parallel for instant data availability
+  const [list, drafts, held] = await Promise.all([
     sql`
       SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
              p.id AS patient_id, p.name AS patient_name, p.mrn, p.dob,
-             (SELECT string_agg(al.substance, ', ') FROM allergies al WHERE al.patient_id = p.id) AS allergy_list
+             (SELECT string_agg(al.substance, ', ') FROM allergies al WHERE al.patient_id = p.id) AS allergy_list,
+             (SELECT count(*)::int FROM allergies al WHERE al.patient_id = p.id) AS allergy_count
       FROM appointments a
       JOIN patients p ON p.id = a.patient_id
       WHERE a.clinician_id = ${user.clinicianId}
@@ -76,122 +59,135 @@ export default async function ClinicToday() {
       FROM reports r JOIN patients pt ON pt.id = r.patient_id
       WHERE r.clinician_id = ${user.clinicianId} AND r.released_at IS NULL
     ` as unknown as Promise<Held[]>,
-
-    verifyChain(),
   ]);
 
+  const now = new Date();
   const active = list.filter((row) => row.status === "confirmed");
+  const completed = list.filter((row) => row.status === "completed");
   const minutes = active.reduce((total, row) => total + (row.duration_min || 30), 0);
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const dateFormatted = `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+
+  const formattedAppointments: TodayAppointment[] = list.map((row) => ({
+    id: row.id,
+    starts_at: row.starts_at instanceof Date ? row.starts_at.toISOString() : String(row.starts_at),
+    duration_min: row.duration_min || 30,
+    type: row.type,
+    status: row.status,
+    room: row.room || user.room || "Surgery 1",
+    patient_id: row.patient_id,
+    patient_name: row.patient_name,
+    mrn: row.mrn,
+    dob: row.dob instanceof Date ? row.dob.toISOString() : String(row.dob),
+    allergy_list: row.allergy_list,
+    allergy_count: row.allergy_count || 0,
+  }));
 
   return (
     <>
       <header className="topbar">
-        <h1>Today</h1>
+        <div>
+          <h1>{greeting}, {user.name}</h1>
+          <p className="meta" style={{ marginTop: 2 }}>
+            {dateFormatted} &bull; {user.room || "Surgery"} &bull; {active.length} appointments remaining today
+          </p>
+        </div>
+        <div className="spacer" />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Link className="btn btn-secondary btn-sm" href={`/clinic/schedule?date=${today}`}>
+            <i className="ph ph-calendar" aria-hidden="true" /> View Schedule
+          </Link>
+          <Link className="btn btn-primary btn-sm" href={`/clinic/schedule/new?date=${today}`}>
+            <i className="ph ph-plus" aria-hidden="true" /> New Appointment
+          </Link>
+        </div>
       </header>
 
       <main className="page" id="main">
+        {/* KPI Summary Tiles */}
         <section className="tiles">
           <div className="tile tile-accent">
-            <div className="k"><i className="ph ph-calendar-check" aria-hidden="true" /> Booked today</div>
+            <div className="k">
+              <i className="ph ph-calendar-check" aria-hidden="true" /> Remaining Today
+            </div>
             <div className="v">{active.length}</div>
-            <div className="n">{list.length - active.length} cancelled or already seen</div>
+            <div className="n">{list.length} total scheduled today</div>
           </div>
           <div className="tile">
-            <div className="k"><i className="ph ph-note-pencil" aria-hidden="true" /> Plans awaiting publication</div>
-            <div className="v">{drafts.length}</div>
-            <div className="n">Drafts are not shared with anyone yet</div>
+            <div className="k">
+              <i className="ph ph-check-circle" aria-hidden="true" /> Patients Seen
+            </div>
+            <div className="v">{completed.length}</div>
+            <div className="n">{completed.length > 0 ? `${Math.round((completed.length / (list.length || 1)) * 100)}% of today completed` : "Ready for first patient"}</div>
           </div>
           <div className="tile">
-            <div className="k"><i className="ph ph-file-text" aria-hidden="true" /> Results not yet released</div>
-            <div className="v">{held.length}</div>
-            <div className="n">Read, then release into the record</div>
-          </div>
-          <div className="tile">
-            <div className="k"><i className="ph ph-clock" aria-hidden="true" /> Chair time booked</div>
+            <div className="k">
+              <i className="ph ph-clock" aria-hidden="true" /> Chair Time Booked
+            </div>
             <div className="v">{minutes}m</div>
-            <div className="n">Minutes across today</div>
+            <div className="n">Active treatment minutes today</div>
           </div>
         </section>
 
+        {/* Main Work Area: Day List on Left, Action Queue on Right */}
         <div className="cols-side">
           <section className="panel">
             <div className="panel-head">
-              <h2>Your list for {DAYS[new Date().getDay()]}</h2>
+              <h2>Appointments ({list.length})</h2>
+              <div className="spacer" />
+              <span className="badge badge-info" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {active.length} active
+              </span>
             </div>
-            {list.length ? (
-              <div className="rows">
-                {list.map((row) => (
-                  <div className="row" key={row.id}>
-                    <div className="row-when">
-                      <div className="d">{formatTime(row.starts_at)}</div>
-                      <div className="m">{row.duration_min} min</div>
-                    </div>
-                    <div className="row-main">
-                      <strong>{row.patient_name}, {age(row.dob)}</strong>
-                      <span>
-                        {row.type}, {row.room}. Record {row.mrn}
-                        {row.allergy_list ? `, allergy to ${row.allergy_list}` : ""}
-                      </span>
-                    </div>
-                    <div className="row-side">
-                      {row.status === "confirmed" && <span className="badge badge-success">Confirmed</span>}
-                      {row.status === "completed" && <span className="badge badge-info">Seen</span>}
-                      {row.status === "cancelled" && <span className="badge badge-error">Cancelled</span>}
-                      <Link className="btn btn-secondary btn-sm" href={`/clinic/patients/${row.patient_id}`}>
-                        Open chart
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="panel-body">
-                <div className="empty">
-                  <i className="ph ph-calendar-blank" aria-hidden="true" />
-                  <h3>Nothing booked today</h3>
-                  <p>Appointments added from the schedule appear here.</p>
-                </div>
-              </div>
-            )}
+            <div className="panel-body flush">
+              <TodayView
+                dateIso={today}
+                appointments={formattedAppointments}
+                setAppointmentStatusAction={setAppointmentStatusAction}
+              />
+            </div>
           </section>
 
+          {/* Right Column: Pending Action Queue & Quick Shortcuts */}
           <div style={{ display: "grid", gap: 24 }}>
+            {/* Quick Actions Shortcuts */}
             <section className="panel">
-              <div className="panel-head"><h3>Record integrity</h3></div>
-              <div className="panel-body">
-                <div className={chain.ok ? "alert alert-success" : "alert alert-critical"}>
-                  <i className={`ph ph-${chain.ok ? "check-circle" : "warning-octagon"}`} aria-hidden="true" />
-                  <span>
-                    {chain.ok ? (
-                      <>
-                        <strong>Audit chain intact.</strong> {chain.checked} entries verified end to end.
-                        Every entry commits to the one before it, so a deleted or edited row would show here.
-                      </>
-                    ) : (
-                      <>
-                        <strong>Audit chain broken at entry {chain.brokenAtSeq}.</strong>{" "}
-                        The trail has been altered. Escalate before relying on it.
-                      </>
-                    )}
-                  </span>
-                </div>
-                <Link className="btn btn-secondary btn-sm" href="/clinic/audit">Open the audit trail</Link>
+              <div className="panel-head">
+                <h3>Quick Shortcuts</h3>
+              </div>
+              <div className="panel-body" style={{ gap: 8 }}>
+                <Link className="quick-action-link" href={`/clinic/schedule/new?date=${today}`}>
+                  <i className="ph ph-calendar-plus" aria-hidden="true" />
+                  <span>Book Appointment</span>
+                </Link>
+                <Link className="quick-action-link" href="/clinic/patients/new">
+                  <i className="ph ph-user-plus" aria-hidden="true" />
+                  <span>Register Patient</span>
+                </Link>
+                <Link className="quick-action-link" href="/clinic/patients">
+                  <i className="ph ph-users-three" aria-hidden="true" />
+                  <span>Find Patient Record</span>
+                </Link>
               </div>
             </section>
 
+            {/* Finish Drafts Panel */}
             {drafts.length > 0 && (
               <section className="panel">
-                <div className="panel-head"><h3>Finish these drafts</h3></div>
+                <div className="panel-head">
+                  <h3>Draft Treatment Plans ({drafts.length})</h3>
+                </div>
                 <div className="panel-body">
                   {drafts.map((plan) => (
                     <Link
                       className="card card-soft"
                       key={plan.id}
                       href={`/clinic/patients/${plan.patient_id}`}
-                      style={{ textDecoration: "none", display: "grid", gap: 6 }}
+                      style={{ textDecoration: "none", display: "grid", gap: 6, transition: "transform 0.15s ease" }}
                     >
                       <strong style={{ font: "var(--title-sm)", color: "var(--ink)" }}>
-                        {plan.phase === "pre" ? "Pre" : "Post"}-treatment, {plan.patient_name}
+                        {plan.phase === "pre" ? "Pre" : "Post"}-treatment &bull; {plan.patient_name}
                       </strong>
                       <span className="meta">{plan.procedure}</span>
                     </Link>
@@ -200,19 +196,22 @@ export default async function ClinicToday() {
               </section>
             )}
 
+            {/* Results to Release Panel */}
             {held.length > 0 && (
               <section className="panel">
-                <div className="panel-head"><h3>Results to release</h3></div>
+                <div className="panel-head">
+                  <h3>Results to Release ({held.length})</h3>
+                </div>
                 <div className="panel-body">
                   {held.map((report) => (
                     <Link
                       className="card card-soft"
                       key={report.id}
                       href={`/clinic/patients/${report.patient_id}`}
-                      style={{ textDecoration: "none", display: "grid", gap: 6 }}
+                      style={{ textDecoration: "none", display: "grid", gap: 6, transition: "transform 0.15s ease" }}
                     >
                       <strong style={{ font: "var(--title-sm)", color: "var(--ink)" }}>{report.title}</strong>
-                      <span className="meta">{report.patient_name}, {report.kind}</span>
+                      <span className="meta">{report.patient_name} &bull; {report.kind}</span>
                     </Link>
                   ))}
                 </div>
