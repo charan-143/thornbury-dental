@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/authz";
-import { verifyChain } from "@/lib/audit";
 import { db, isoDate } from "@/lib/db";
 import { dayBounds } from "@/lib/scheduling";
 
@@ -52,7 +51,7 @@ export default async function ClinicToday() {
   // the allergy summary the chip beside each name is drawn from. Nothing on
   // the page said any of that had happened.
   // Run all dashboard queries in parallel to eliminate waterfalls and load immediately
-  const [list, drafts, held, chain] = await Promise.all([
+  const [list, drafts, held] = await Promise.all([
     sql`
       SELECT a.id, a.starts_at, a.duration_min, a.type, a.status, a.room,
              p.id AS patient_id, p.name AS patient_name, p.mrn, p.dob,
@@ -76,8 +75,6 @@ export default async function ClinicToday() {
       FROM reports r JOIN patients pt ON pt.id = r.patient_id
       WHERE r.clinician_id = ${user.clinicianId} AND r.released_at IS NULL
     ` as unknown as Promise<Held[]>,
-
-    verifyChain(),
   ]);
 
   const active = list.filter((row) => row.status === "confirmed");
@@ -156,29 +153,6 @@ export default async function ClinicToday() {
           </section>
 
           <div style={{ display: "grid", gap: 24 }}>
-            <section className="panel">
-              <div className="panel-head"><h3>Record integrity</h3></div>
-              <div className="panel-body">
-                <div className={chain.ok ? "alert alert-success" : "alert alert-critical"}>
-                  <i className={`ph ph-${chain.ok ? "check-circle" : "warning-octagon"}`} aria-hidden="true" />
-                  <span>
-                    {chain.ok ? (
-                      <>
-                        <strong>Audit chain intact.</strong> {chain.checked} entries verified end to end.
-                        Every entry commits to the one before it, so a deleted or edited row would show here.
-                      </>
-                    ) : (
-                      <>
-                        <strong>Audit chain broken at entry {chain.brokenAtSeq}.</strong>{" "}
-                        The trail has been altered. Escalate before relying on it.
-                      </>
-                    )}
-                  </span>
-                </div>
-                <Link className="btn btn-secondary btn-sm" href="/clinic/audit">Open the audit trail</Link>
-              </div>
-            </section>
-
             {drafts.length > 0 && (
               <section className="panel">
                 <div className="panel-head"><h3>Finish these drafts</h3></div>
