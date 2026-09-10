@@ -112,7 +112,14 @@ export default async function ClinicToday() {
               <i className="ph ph-calendar-check" aria-hidden="true" /> Remaining Today
             </div>
             <div className="v">{active.length}</div>
-            <div className="n">{completed.length} seen &bull; {list.length} total scheduled</div>
+            <div className="n">{list.length} total scheduled today</div>
+          </div>
+          <div className="tile">
+            <div className="k">
+              <i className="ph ph-check-circle" aria-hidden="true" /> Patients Seen
+            </div>
+            <div className="v">{completed.length}</div>
+            <div className="n">{completed.length > 0 ? `${Math.round((completed.length / (list.length || 1)) * 100)}% of today completed` : "Ready for first patient"}</div>
           </div>
           <div className="tile">
             <div className="k">
@@ -120,20 +127,6 @@ export default async function ClinicToday() {
             </div>
             <div className="v">{minutes}m</div>
             <div className="n">Active treatment minutes today</div>
-          </div>
-          <div className="tile">
-            <div className="k">
-              <i className="ph ph-note-pencil" aria-hidden="true" /> Draft Plans
-            </div>
-            <div className="v">{drafts.length}</div>
-            <div className="n">Awaiting clinician publication</div>
-          </div>
-          <div className="tile">
-            <div className="k">
-              <i className="ph ph-file-text" aria-hidden="true" /> Results to Release
-            </div>
-            <div className="v">{held.length}</div>
-            <div className="n">Diagnostics pending review</div>
           </div>
         </section>
 
