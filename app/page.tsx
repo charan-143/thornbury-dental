@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { HeroDentalModel } from "@/components/hero-dental-model";
+import { PublicHeader } from "@/components/public-header";
 
 // HeroDentalModel is imported directly rather than through next/dynamic.
 //
@@ -67,22 +68,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <header className="nav">
-        <div className="wrap nav-inner">
-          <Link className="brand" href="/">
-            <span className="brand-mark"><i className="ph-fill ph-tooth" aria-hidden="true" /></span>
-            <span className="brand-name">Thornbury Dental</span>
-          </Link>
-          <nav className="nav-links" aria-label="Main">
-            <a href="#care">Care</a>
-            <a href="#team">Clinicians</a>
-            <a href="#visit">Visiting us</a>
-          </nav>
-          <div className="nav-actions">
-            <Link className="btn btn-primary btn-cta" href="/signin">Staff sign in</Link>
-          </div>
-        </div>
-      </header>
+      <PublicHeader />
 
       <main id="main">
         <section className="hero">
