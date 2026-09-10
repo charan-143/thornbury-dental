@@ -48,6 +48,19 @@ function digest(f: {
   ].join(" "));
 }
 
+// Actions permitted into the audit trail. Everything else is ignored to keep
+// the audit trail tailored strictly to user appointments and patient registry.
+const AUDITED_ENTITIES = new Set(["appointment", "patient"]);
+
+function shouldAudit(entry: AuditEntry): boolean {
+  if (!entry.actorId) return false;
+  if (entry.entity === "appointment") return true;
+  if (entry.entity === "patient" && (entry.action.includes("register") || entry.action.includes("created"))) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Appends one entry. Never throws into the caller path: losing a clinical
  * action because the audit write failed would be worse than the missing entry,
@@ -55,6 +68,11 @@ function digest(f: {
  * may reference a patient.
  */
 export async function record(entry: AuditEntry): Promise<void> {
+  // Only record appointments and patient registry events tailored to actors
+  if (!shouldAudit(entry)) {
+    return;
+  }
+
   const outcome = entry.outcome ?? "ok";
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {

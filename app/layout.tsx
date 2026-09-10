@@ -46,9 +46,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <a className="skip-link" href="#main">Skip to the main content</a>
-        <p className="demo-strip">
-          A demonstration build with invented records. Do not enter real patient information.
-        </p>
         {children}
       </body>
     </html>

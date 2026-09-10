@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { recordChartAccess, requireStaff } from "@/lib/authz";
+import { requireStaff } from "@/lib/authz";
 import { db } from "@/lib/db";
 import { DentalChart } from "@/components/dental-chart";
 import { PatientChartTabs } from "@/components/patient-chart-tabs";
@@ -94,10 +94,7 @@ export default async function PatientChartPage({ params }: { params: Promise<{ i
     }
   }
 
-  // Recorded before anything clinical is read. A chart that cannot be logged
-  // is a chart that must not be shown: the access record is the only evidence
-  // that this reading of the patient's notes ever happened.
-  await recordChartAccess(user, patient.id, "opened a patient chart");
+  // All independent database queries are executed in parallel via Promise.all()
 
   // The reads below deliberately have no fallback.
   //

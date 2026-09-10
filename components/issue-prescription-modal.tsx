@@ -178,6 +178,7 @@ export function IssuePrescriptionModal({
   const [rows, setRows] = useState<RxDraftRow[]>([createEmptyRow()]);
   const [customPresets, setCustomPresets] = useState<Array<{ label: string; item: RxPresetItem }>>([]);
   const [showAddPresetForm, setShowAddPresetForm] = useState(false);
+  const [showManagePresets, setShowManagePresets] = useState(false);
   const [newPresetData, setNewPresetData] = useState<RxPresetItem>({
     drug: "",
     form: "Tablet",
@@ -425,15 +426,33 @@ export function IssuePrescriptionModal({
               <span className="eyebrow" style={{ display: "block" }}>
                 Add Single Drug Preset
               </span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowAddPresetForm((prev) => !prev)}
-                style={{ fontSize: "0.8125rem", padding: "4px 10px" }}
-              >
-                <i className={`ph ph-${showAddPresetForm ? "x" : "plus-circle"}`} aria-hidden="true" />
-                {showAddPresetForm ? "Cancel" : "Create New Preset"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button
+                  type="button"
+                  className={`btn ${showManagePresets ? "btn-primary" : "btn-secondary"} btn-sm`}
+                  onClick={() => {
+                    setShowManagePresets((prev) => !prev);
+                    if (!showManagePresets) setShowAddPresetForm(false);
+                  }}
+                  style={{ fontSize: "0.8125rem", padding: "4px 10px" }}
+                  title="Manage your custom presets"
+                >
+                  <i className="ph ph-sliders-horizontal" aria-hidden="true" />
+                  {showManagePresets ? "Done Managing" : `Manage Presets${customPresets.length ? ` (${customPresets.length})` : ""}`}
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${showAddPresetForm ? "btn-primary" : "btn-secondary"} btn-sm`}
+                  onClick={() => {
+                    setShowAddPresetForm((prev) => !prev);
+                    if (!showAddPresetForm) setShowManagePresets(false);
+                  }}
+                  style={{ fontSize: "0.8125rem", padding: "4px 10px" }}
+                >
+                  <i className={`ph ph-${showAddPresetForm ? "x" : "plus-circle"}`} aria-hidden="true" />
+                  {showAddPresetForm ? "Cancel" : "Create New Preset"}
+                </button>
+              </div>
             </div>
 
             {/* Notification alert on preset save */}
@@ -593,7 +612,94 @@ export function IssuePrescriptionModal({
               </div>
             )}
 
-            {/* Presets List: Default + Custom */}
+            {/* Manage Custom Presets Drawer */}
+            {showManagePresets && (
+              <div
+                className="card card-soft"
+                style={{
+                  padding: "var(--s-md)",
+                  border: "1px solid var(--hairline)",
+                  borderRadius: "var(--r-card)",
+                  background: "var(--surface-soft)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--s-sm)",
+                  marginTop: 4,
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <strong style={{ font: "var(--title-sm)", color: "var(--ink)", display: "flex", alignItems: "center", gap: 6 }}>
+                    <i className="ph ph-sliders-horizontal" aria-hidden="true" style={{ color: "var(--primary)" }} />
+                    Manage Presets ({customPresets.length} Custom)
+                  </strong>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowManagePresets(false)}
+                    style={{ fontSize: "0.8125rem", padding: "2px 8px" }}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {customPresets.length === 0 ? (
+                  <p className="meta" style={{ fontSize: "0.8125rem", fontStyle: "italic", padding: "8px 0" }}>
+                    No custom presets created yet. You can create one by clicking &quot;Create New Preset&quot; or clicking &quot;Save as Preset&quot; on any configured medication row below.
+                  </p>
+                ) : (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {customPresets.map((p) => (
+                      <div
+                        key={p.label}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "8px 12px",
+                          background: "var(--canvas)",
+                          border: "1px solid var(--hairline)",
+                          borderRadius: "var(--r-control)",
+                          gap: 12,
+                        }}
+                      >
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <strong style={{ font: "var(--body-md)", color: "var(--ink)" }}>{p.label}</strong>
+                            <span className="badge" style={{ fontSize: "0.7rem", padding: "1px 6px" }}>{p.item.form}</span>
+                          </div>
+                          <span className="meta" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                            {p.item.dose} • {p.item.frequency} • {p.item.durationDays} days {p.item.indication ? `• ${p.item.indication}` : ""}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: "0.75rem", padding: "3px 8px", minHeight: "26px" }}
+                            onClick={() => applySinglePreset(p.item)}
+                            title={`Apply ${p.label}`}
+                          >
+                            <i className="ph ph-plus" aria-hidden="true" /> Apply
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            style={{ fontSize: "0.75rem", padding: "3px 8px", minHeight: "26px" }}
+                            onClick={(e) => handleDeleteCustomPreset(p.label, e)}
+                            title={`Delete preset ${p.label}`}
+                          >
+                            <i className="ph ph-trash" aria-hidden="true" /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Presets List: Default + Custom (All uniform style) */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {DEFAULT_PRESETS.map((p) => (
                 <button
@@ -601,55 +707,23 @@ export function IssuePrescriptionModal({
                   type="button"
                   className="btn btn-secondary btn-sm"
                   onClick={() => applySinglePreset(p.item)}
-                  title={`Apply ${p.label}`}
+                  title={`Apply default preset: ${p.label}`}
                 >
                   <i className="ph ph-plus" aria-hidden="true" /> {p.label}
                 </button>
               ))}
 
-              {/* User-defined Custom Presets */}
+              {/* User-defined Custom Presets (rendered exactly as the other preset buttons) */}
               {customPresets.map((p) => (
-                <div
+                <button
                   key={p.label}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    borderRadius: "var(--r-button)",
-                    border: "1px solid var(--primary)",
-                    background: "var(--surface-cream)",
-                    overflow: "hidden",
-                  }}
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => applySinglePreset(p.item)}
+                  title={`Apply custom preset: ${p.label}`}
                 >
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{
-                      color: "var(--primary-text)",
-                      fontWeight: 600,
-                      padding: "4px 8px",
-                      borderRadius: 0,
-                    }}
-                    onClick={() => applySinglePreset(p.item)}
-                    title={`Apply custom preset: ${p.label}`}
-                  >
-                    <i className="ph ph-star" aria-hidden="true" style={{ color: "var(--primary)" }} /> {p.label}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{
-                      padding: "4px 6px",
-                      color: "var(--muted)",
-                      borderRadius: 0,
-                      borderLeft: "1px solid var(--hairline)",
-                    }}
-                    onClick={(e) => handleDeleteCustomPreset(p.label, e)}
-                    title={`Delete preset "${p.label}"`}
-                    aria-label={`Delete preset ${p.label}`}
-                  >
-                    <i className="ph ph-x" aria-hidden="true" style={{ fontSize: "0.75rem" }} />
-                  </button>
-                </div>
+                  <i className="ph ph-plus" aria-hidden="true" /> {p.label}
+                </button>
               ))}
             </div>
           </div>

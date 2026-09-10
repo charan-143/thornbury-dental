@@ -2256,6 +2256,204 @@ button.row:hover { background: var(--surface-soft); }
   border-radius: var(--r-card);
 }
 
+/* --- Today Clinical Command Center Styles --------------------------------- */
+.today-view-container {
+  display: grid;
+  gap: var(--s-md);
+}
+
+.today-spotlight {
+  background: linear-gradient(135deg, var(--surface-cream-strong) 0%, var(--surface-card) 100%);
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--r-card);
+  padding: 14px 18px;
+  display: grid;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+  margin: var(--s-md) var(--s-lg) 0 var(--s-lg);
+}
+
+.today-spotlight-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--caption);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--primary-text);
+  font-weight: 600;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--primary);
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(178, 92, 62, 0.7);
+  animation: pulse-ring-dot 1.8s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+
+@keyframes pulse-ring-dot {
+  0% { box-shadow: 0 0 0 0 rgba(178, 92, 62, 0.7); }
+  70% { box-shadow: 0 0 0 7px rgba(178, 92, 62, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(178, 92, 62, 0); }
+}
+
+.today-spotlight-content {
+  display: flex;
+  align-items: center;
+  gap: var(--s-md);
+  flex-wrap: wrap;
+}
+
+.today-spotlight-time {
+  min-width: 72px;
+  text-align: center;
+  padding: 6px 12px;
+  background: var(--canvas);
+  border-radius: var(--r-control);
+  border: 1px solid var(--hairline);
+}
+
+.today-spotlight-time .time-val {
+  font: 600 1.25rem/1.1 var(--font-sans);
+  color: var(--ink);
+  display: block;
+}
+
+.today-spotlight-time .time-dur {
+  font: var(--caption);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+  display: block;
+}
+
+.today-spotlight-info {
+  flex: 1 1 240px;
+}
+
+.today-spotlight-info h3 {
+  font: var(--title-md);
+  color: var(--ink);
+  margin-bottom: 3px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.today-spotlight-info .spotlight-age {
+  font: var(--body-sm);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.today-spotlight-info p {
+  font: var(--body-sm);
+  color: var(--body);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.spotlight-allergy {
+  color: var(--error);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--error-wash);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+
+.today-spotlight-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.today-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-sm);
+  padding: var(--s-sm) var(--s-lg);
+  border-bottom: 1px solid var(--hairline-soft);
+  flex-wrap: wrap;
+}
+
+.today-row {
+  transition: background-color 0.15s var(--ease);
+}
+
+.today-row.row-cancelled {
+  opacity: 0.6;
+}
+
+.today-row.row-cancelled .patient-name-link {
+  text-decoration: line-through;
+}
+
+.patient-headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.patient-demog {
+  font: var(--body-sm);
+  color: var(--muted);
+}
+
+.appt-desc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.procedure-tag {
+  font: 500 0.8125rem/1.2 var(--font-sans);
+  color: var(--body-strong);
+}
+
+.today-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quick-action-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--surface-soft);
+  text-decoration: none;
+  color: var(--body-strong);
+  font: 500 0.875rem/1.2 var(--font-sans);
+  transition: all 0.15s var(--ease);
+}
+
+.quick-action-link:hover {
+  background: var(--surface-cream-strong);
+  color: var(--primary-text);
+  transform: translateX(2px);
+}
+
+.quick-action-link i {
+  font-size: 1.15rem;
+  color: var(--primary);
+}
+
+
 
 
 
